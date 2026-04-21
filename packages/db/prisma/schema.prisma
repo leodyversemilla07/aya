@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Developer {
+  id          String   @id @default(cuid())
+  name        String
+  email       String   @unique
+  role        String
+  seniority   String   // junior, mid, senior, lead
+  avatarUrl   String?
+  benchSince  DateTime?
+  skills      Skill[]
+  assignments Assignment[]
+  contracts   Contract[]
+  performance Performance[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Skill {
+  id          String   @id @default(cuid())
+  name        String   // React, Node.js, Flutter, etc.
+  level       String   // beginner, intermediate, advanced, expert
+  yearsExp    Int
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  developerId String
+
+  @@unique([developerId, name])
+}
+
+model Client {
+  id          String       @id @default(cuid())
+  name        String
+  industry    String       // fintech, retail, real-estate, banking, etc.
+  logoUrl     String?
+  contacts    Contact[]
+  assignments Assignment[]
+  contracts   Contract[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Contact {
+  id        String @id @default(cuid())
+  name      String
+  role      String
+  email     String
+  phone     String?
+  client    Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId  String
+}
+
+model Assignment {
+  id            String    @id @default(cuid())
+  projectName   String
+  status        String    @default("active") // active, ending, transition, completed
+  startDate     DateTime
+  endDate       DateTime?
+  jiraBoardUrl  String?
+  githubRepoUrl String?
+  developer     Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  developerId   String
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId      String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Contract {
+  id          String   @id @default(cuid())
+  startDate   DateTime
+  endDate     DateTime
+  billingRate Float    // monthly rate
+  status      String   @default("active") // active, renewing, expired
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  developerId String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Performance {
+  id           String   @id @default(cuid())
+  period       String   // "2026-Q1", "2026-03"
+  velocity     Float    // story points per sprint
+  prMergeTime  Float    // avg days to merge PR
+  codeQuality  Float    // 0-100 score
+  clientRating Float?   // 1-5
+  notes        String?
+  developer    Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  developerId  String
+  createdAt    DateTime @default(now())
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  title     String?
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  role           String       // user, assistant, tool
+  content        String
+  toolCalls      String?      // JSON string of tool calls
+  toolCallId     String?
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  createdAt      DateTime     @default(now())
+}
