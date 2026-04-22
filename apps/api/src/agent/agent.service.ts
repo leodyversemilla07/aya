@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { prisma } from '@workspace/db';
-import type { LlmService } from '../llm/llm.service';
+import { LlmService } from '../llm/llm.service';
 import { executeTool, tools } from './tools';
 
 const SYSTEM_PROMPT = `You are Aya, an AI assistant for staff augmentation management at a software development company.
@@ -50,7 +50,12 @@ export class AgentService {
           msg.toolCallId = m.toolCallId;
         }
         if (m.toolCalls) {
-          msg.toolCalls = JSON.parse(m.toolCalls);
+          try {
+            msg.toolCalls = JSON.parse(m.toolCalls);
+          } catch (parseErr) {
+            // Invalid JSON stored - skip tool calls
+            console.warn('Failed to parse toolCalls from message:', m.id, parseErr);
+          }
         }
         return msg;
       }),

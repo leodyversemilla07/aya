@@ -1,0 +1,407 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+  SidebarSeparator,
+  SidebarTrigger,
+  useSidebar,
+} from '@workspace/ui/components/sidebar';
+import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar';
+import { Button } from '@workspace/ui/components/button';
+import { Input } from '@workspace/ui/components/input';
+import { ScrollArea } from '@workspace/ui/components/scroll-area';
+import {
+  Bot,
+  Send,
+  User,
+  Home,
+  Search,
+  Settings,
+  Bell,
+  Plus,
+  Menu,
+} from 'lucide-react';
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+// Sidebar content component
+function ChatSidebar() {
+  const { state } = useSidebar();
+  const isExpanded = state === 'expanded';
+
+  const handleQuickAction = (query: string) => {
+    window.dispatchEvent(new CustomEvent('aya-chat', { detail: query }));
+  };
+
+  return (
+    <>
+      <SidebarHeader className="border-b border-sidebar-border">
+        <div className="flex items-center gap-2 px-2 py-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary">
+            <Bot className="h-5 w-5 text-sidebar-primary-foreground" />
+          </div>
+          {isExpanded && (
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold text-sidebar-foreground">Aya</span>
+              <span className="text-xs text-sidebar-muted-foreground">Staff Augmentation</span>
+            </div>
+          )}
+        </div>
+      </SidebarHeader>
+
+      <SidebarContent className="gap-1 p-2">
+        {/* New Chat Button */}
+        <Button
+          variant="default"
+          size="sm"
+          className={`w-full gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
+        >
+          <Plus className="h-4 w-4" />
+          {isExpanded && <span className="text-sm">New Chat</span>}
+        </Button>
+
+        <SidebarSeparator className="my-1 bg-sidebar-border" />
+
+        {/* Navigation */}
+        <SidebarGroup>
+          {isExpanded && (
+            <SidebarGroupLabel className="text-xs font-medium text-sidebar-muted-foreground mb-1">
+              Menu
+            </SidebarGroupLabel>
+          )}
+          <SidebarGroupContent>
+            <div className="flex flex-col gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => window.location.href = '/'}
+                className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
+              >
+                <Home className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Dashboard</span>}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
+              >
+                <Search className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Search</span>}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
+              >
+                <Bell className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Alerts</span>}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
+              >
+                <Settings className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Settings</span>}
+              </Button>
+            </div>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+    </>
+  );
+}
+
+export default function ChatPage() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleChat = (e: CustomEvent) => {
+      sendMessage(e.detail);
+    };
+    window.addEventListener('aya-chat', handleChat as EventListener);
+    return () => window.removeEventListener('aya-chat', handleChat as EventListener);
+  }, [loading, conversationId]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scrollRef is a stable ref
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  async function sendMessage(text: string) {
+    if (!text.trim() || loading) return;
+
+    const userMsg: Message = { role: 'user', content: text };
+    setMessages((prev) => [...prev, userMsg]);
+    setInput('');
+    setLoading(true);
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+      if (!apiUrl) {
+        throw new Error('NEXT_PUBLIC_API_URL not configured');
+      }
+      const res = await fetch(`${apiUrl}/agent/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, conversationId }),
+      });
+
+      if (!res.ok) {
+        const errorMsg = `Error: ${res.status} - Could not connect to Aya API`;
+        setMessages((prev) => [...prev, { role: 'assistant', content: errorMsg }]);
+        setLoading(false);
+        return;
+      }
+
+      const data = await res.json();
+
+      if (!data || typeof data.content !== 'string') {
+        setMessages((prev) => [...prev, { role: 'assistant', content: 'Error: Invalid response from API' }]);
+        setLoading(false);
+        return;
+      }
+
+      if (data.conversationId && !conversationId) {
+        setConversationId(data.conversationId);
+      }
+
+      setMessages((prev) => [...prev, { role: 'assistant', content: data.content }]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: 'Error: Could not connect to Aya API. Make sure the API is running on port 3001.',
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    sendMessage(input);
+  }
+
+  return (
+    <SidebarProvider defaultOpen={true}>
+      <Sidebar side="left" variant="sidebar" collapsible="icon">
+        <ChatSidebar />
+      </Sidebar>
+
+      <SidebarInset>
+        <div className="flex flex-1 flex-col h-screen">
+          {/* Header */}
+          <header className="flex items-center justify-between border-b border-sidebar-border bg-sidebar px-6 py-3">
+            <div className="flex items-center gap-3">
+              <SidebarTrigger />
+              <div>
+                <h2 className="text-sm font-semibold text-sidebar-foreground">Chat</h2>
+                <p className="text-xs text-sidebar-muted-foreground">Staff Augmentation Assistant</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 text-xs text-sidebar-muted-foreground">
+                <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                Online
+              </div>
+            </div>
+          </header>
+
+          {/* Messages */}
+          <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+            <div className="mx-auto max-w-3xl space-y-4">
+              {messages.length === 0 && (
+                <div className="py-16 text-center">
+                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-sidebar-accent">
+                    <Bot className="h-7 w-7 text-sidebar-foreground" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-sidebar-foreground">Welcome to Aya</h3>
+                  <p className="mt-1 text-sm text-sidebar-muted-foreground max-w-md mx-auto">
+                    Your AI assistant for staff augmentation management.
+                    <br />
+                    Ask me about developers, clients, contracts, or team performance.
+                  </p>
+                  
+                  <div className="mt-6 flex flex-wrap justify-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => sendMessage('Show me developers on the bench')}
+                      className="border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent"
+                    >
+                      Who is on the bench?
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => sendMessage('What is our utilization rate?')}
+                      className="border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent"
+                    >
+                      Utilization rate
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => sendMessage('Show me contracts expiring this month')}
+                      className="border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent"
+                    >
+                      Expiring contracts
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => sendMessage('Find a React developer for a fintech project')}
+                      className="border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent"
+                    >
+                      Find developer
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {messages.map((msg, i) => (
+                <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                  {msg.role === 'assistant' && (
+                    <Avatar className="h-8 w-8 shrink-0 border border-sidebar-border">
+                      <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">
+                        A
+                      </AvatarFallback>
+                    </Avatar>
+                  )}
+
+                  <div
+                    className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+                      msg.role === 'user'
+                        ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                        : 'bg-sidebar-accent text-sidebar-foreground border border-sidebar-border'
+                    }`}
+                  >
+                    {msg.role === 'user' ? (
+                      <p>{msg.content}</p>
+                    ) : (
+                      <div className="text-sidebar-foreground">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            table: ({ children }) => (
+                              <div className="my-3 overflow-hidden rounded-lg border border-sidebar-border">
+                                <table className="w-full text-xs">{children}</table>
+                              </div>
+                            ),
+                            thead: ({ children }) => (
+                              <thead className="bg-sidebar-accent">{children}</thead>
+                            ),
+                            th: ({ children }) => (
+                              <th className="border-b border-sidebar-border px-3 py-2 text-left font-semibold">
+                                {children}
+                              </th>
+                            ),
+                            td: ({ children }) => (
+                              <td className="border-b border-sidebar-border px-3 py-2">{children}</td>
+                            ),
+                            p: ({ children }) => (
+                              <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>
+                            ),
+                            strong: ({ children }) => (
+                              <strong className="font-semibold">{children}</strong>
+                            ),
+                            ul: ({ children }) => (
+                              <ul className="mb-2 list-disc pl-4">{children}</ul>
+                            ),
+                            ol: ({ children }) => (
+                              <ol className="mb-2 list-decimal pl-4">{children}</ol>
+                            ),
+                            li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                            h1: ({ children }) => (
+                              <h1 className="mb-2 text-lg font-bold">{children}</h1>
+                            ),
+                            h2: ({ children }) => (
+                              <h2 className="mb-2 text-base font-semibold">{children}</h2>
+                            ),
+                            h3: ({ children }) => (
+                              <h3 className="mb-1 text-sm font-semibold">{children}</h3>
+                            ),
+                          }}
+                        >
+                          {msg.content}
+                        </ReactMarkdown>
+                      </div>
+                    )}
+                  </div>
+
+                  {msg.role === 'user' && (
+                    <Avatar className="h-8 w-8 shrink-0">
+                      <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground">
+                        <User className="h-4 w-4" />
+                      </AvatarFallback>
+                    </Avatar>
+                  )}
+                </div>
+              ))}
+
+              {loading && (
+                <div className="flex gap-3">
+                  <Avatar className="h-8 w-8 shrink-0 border border-sidebar-border">
+                    <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-xs">
+                      A
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="rounded-2xl bg-sidebar-accent border border-sidebar-border px-4 py-3">
+                    <div className="flex gap-1">
+                      <span className="h-2 w-2 rounded-full bg-sidebar-muted-foreground animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                      <span className="h-2 w-2 rounded-full bg-sidebar-muted-foreground animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                      <span className="h-2 w-2 rounded-full bg-sidebar-muted-foreground animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+
+          {/* Input */}
+          <footer className="border-t border-sidebar-border bg-sidebar p-4">
+            <form onSubmit={handleSubmit} className="mx-auto flex max-w-3xl gap-2">
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ask about your team..."
+                disabled={loading}
+                className="h-11 border-sidebar-border bg-sidebar-accent"
+              />
+              <Button
+                type="submit"
+                disabled={loading || !input.trim()}
+                size="icon"
+                className="h-11 w-11 bg-sidebar-primary hover:bg-sidebar-primary/90"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </form>
+          </footer>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
