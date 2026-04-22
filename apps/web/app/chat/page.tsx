@@ -24,12 +24,20 @@ import {
   Bot,
   Send,
   User,
+  Users,
+  UserCheck,
+  UserPlus,
+  BarChart3,
+  FileText,
+  Briefcase,
+  Building2,
+  TrendingUp,
+  AlertTriangle,
   Home,
   Search,
   Settings,
   Bell,
   Plus,
-  Menu,
 } from 'lucide-react';
 
 interface Message {
@@ -75,11 +83,11 @@ function ChatSidebar() {
 
         <SidebarSeparator className="my-1 bg-sidebar-border" />
 
-        {/* Navigation */}
+        {/* Agent Capabilities */}
         <SidebarGroup>
           {isExpanded && (
             <SidebarGroupLabel className="text-xs font-medium text-sidebar-muted-foreground mb-1">
-              Menu
+              Capabilities
             </SidebarGroupLabel>
           )}
           <SidebarGroupContent>
@@ -87,35 +95,56 @@ function ChatSidebar() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => window.location.href = '/'}
+                onClick={() => handleQuickAction('Search developers by skills or availability')}
                 className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
               >
-                <Home className="h-4 w-4" />
-                {isExpanded && <span className="text-sm">Dashboard</span>}
+                <Users className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Developer Roster</span>}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => handleQuickAction('Find best developers for a new project')}
                 className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
               >
-                <Search className="h-4 w-4" />
-                {isExpanded && <span className="text-sm">Search</span>}
+                <UserPlus className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Match Talent</span>}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => handleQuickAction('What is our current utilization rate?')}
                 className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
               >
-                <Bell className="h-4 w-4" />
+                <BarChart3 className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Utilization</span>}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleQuickAction('Show me contracts status and renewals')}
+                className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
+              >
+                <FileText className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Contracts</span>}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleQuickAction('Show team performance metrics')}
+                className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
+              >
+                <TrendingUp className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Performance</span>}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleQuickAction('Show all active risk alerts')}
+                className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
+              >
+                <AlertTriangle className="h-4 w-4" />
                 {isExpanded && <span className="text-sm">Alerts</span>}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
-              >
-                <Settings className="h-4 w-4" />
-                {isExpanded && <span className="text-sm">Settings</span>}
               </Button>
             </div>
           </SidebarGroupContent>

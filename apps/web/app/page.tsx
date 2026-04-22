@@ -27,16 +27,17 @@ import {
   User,
   Users,
   UserCheck,
+  UserPlus,
   BarChart3,
   FileText,
   Briefcase,
   Building2,
+  TrendingUp,
+  AlertTriangle,
   Home,
   Search,
   Settings,
   Bell,
-  TrendingUp,
-  Calendar,
 } from 'lucide-react';
 
 interface Message {
@@ -87,38 +88,60 @@ function DashboardSidebar() {
           )}
           <SidebarGroupContent>
             <div className="flex flex-col gap-1">
+              {/* Navigation - Agent Capabilities */}
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => handleQuickAction('Search developers by skills or availability')}
                 className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
               >
-                <Home className="h-4 w-4" />
-                {isExpanded && <span className="text-sm">Dashboard</span>}
+                <Users className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Developer Roster</span>}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => handleQuickAction('Find best developers for a new project')}
                 className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
               >
-                <Search className="h-4 w-4" />
-                {isExpanded && <span className="text-sm">Search</span>}
+                <UserPlus className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Match Talent</span>}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => window.location.href = '/chat'}
+                onClick={() => handleQuickAction('What is our current utilization rate?')}
                 className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
               >
-                <Bot className="h-4 w-4" />
-                {isExpanded && <span className="text-sm">Chat</span>}
+                <BarChart3 className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Utilization</span>}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => handleQuickAction('Show me contracts status and renewals')}
                 className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
               >
-                <Settings className="h-4 w-4" />
-                {isExpanded && <span className="text-sm">Settings</span>}
+                <FileText className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Contracts</span>}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleQuickAction('Show team performance metrics')}
+                className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
+              >
+                <TrendingUp className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Performance</span>}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleQuickAction('Show all active risk alerts')}
+                className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
+              >
+                <AlertTriangle className="h-4 w-4" />
+                {isExpanded && <span className="text-sm">Alerts</span>}
               </Button>
             </div>
           </SidebarGroupContent>
@@ -126,7 +149,7 @@ function DashboardSidebar() {
 
         <SidebarSeparator className="my-1 bg-sidebar-border" />
 
-        {/* Quick Actions */}
+        {/* Quick Actions - Agent Capabilities */}
         <SidebarGroup>
           {isExpanded && (
             <SidebarGroupLabel className="text-xs font-medium text-sidebar-muted-foreground mb-1">
@@ -161,6 +184,15 @@ function DashboardSidebar() {
               >
                 <FileText className="h-4 w-4" />
                 {isExpanded && <span className="text-sm truncate">Renewals</span>}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleQuickAction('Show all active risk alerts')}
+                className={`justify-start gap-2 ${isExpanded ? 'px-2' : 'px-2.5 justify-center'}`}
+              >
+                <AlertTriangle className="h-4 w-4" />
+                {isExpanded && <span className="text-sm truncate">Alerts</span>}
               </Button>
             </div>
           </SidebarGroupContent>
