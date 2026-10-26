@@ -1,4 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { Injectable, Logger } from '@nestjs/common';
+import type { ZodTypeAny } from 'zod';
+import { zodToJsonSchema } from 'zod-to-json-schema';
+
+export class LlmError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'LlmError';
+  }
+}
 
 export interface LlmToolCall {
   id: string;
@@ -10,11 +23,7 @@ export interface LlmMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
   toolCallId?: string;
-  toolCalls?: Array<{
-    id: string;
-    type: string;
-    function: { name: string; arguments: string };
-  }>;
+  toolCalls?: LlmToolCall[];
 }
 
 export interface LlmResponse {
@@ -22,176 +31,303 @@ export interface LlmResponse {
   toolCalls: LlmToolCall[];
 }
 
-function getProviderConfig() {
-  const provider = (process.env.LLM_PROVIDER || 'opencode-zen').toLowerCase();
-  const apiKey = process.env.LLM_API_KEY;
-  const modelName = process.env.LLM_MODEL;
-
-  switch (provider) {
-    case 'openai':
-      return { baseURL: 'https://api.openai.com/v1', model: modelName || 'gpt-4o-mini', apiKey };
-    case 'openrouter':
-      return {
-        baseURL: 'https://openrouter.ai/api/v1',
-        model: modelName || 'google/gemma-4-26b-a4b-it:free',
-        apiKey,
-      };
-    default:
-      return {
-        baseURL: 'https://opencode.ai/zen/v1',
-        model: modelName || 'minimax-m2.5-free',
-        apiKey,
-      };
-  }
+export interface LlmToolDefinition {
+  description?: string;
+  parameters: ZodTypeAny;
 }
 
-function zodToJsonSchema(zodSchema: any): Record<string, unknown> {
-  // Convert Vercel AI SDK Zod-based tool definitions to OpenAI-compatible JSON schema
-  const shape = zodSchema._def?.shape?.() ?? {};
-  const required: string[] = [];
-  const properties: Record<string, unknown> = {};
+export type LlmTools = Record<string, LlmToolDefinition>;
 
-  for (const [key, value] of Object.entries(shape)) {
-    const field = value as any;
-    const typeName = field._def?.typeName;
-    const desc = field._def?.description ?? '';
-    const prop: Record<string, unknown> = {};
+interface ProviderConfig {
+  baseURL: string;
+  model: string;
+  apiKey: string;
+}
 
-    if (typeName === 'ZodString') prop.type = 'string';
-    else if (typeName === 'ZodNumber') prop.type = 'number';
-    else if (typeName === 'ZodBoolean') prop.type = 'boolean';
-    else if (typeName === 'ZodArray') {
-      prop.type = 'array';
-      const innerType = field._def?.type?._def?.typeName;
-      if (innerType === 'ZodString') prop.items = { type: 'string' };
-    } else if (typeName === 'ZodEnum') prop.type = 'string';
-    else prop.type = 'string';
+interface ProviderDefaults {
+  baseURL: string;
+  model: string;
+}
 
-    if (desc) prop.description = desc;
+const PROVIDER_DEFAULTS: Record<string, ProviderDefaults> = {
+  openai: { baseURL: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  openrouter: {
+    baseURL: 'https://openrouter.ai/api/v1',
+    model: 'google/gemma-4-26b-a4b-it:free',
+  },
+  'opencode-zen': { baseURL: 'https://opencode.ai/zen/v1', model: 'minimax-m2.5-free' },
+};
 
-    // Check if field is NOT optional (no ZodOptional wrapper)
-    if (typeName !== 'ZodOptional') {
-      required.push(key);
-    }
-    // If it's ZodOptional, unwrap and get inner type
-    if (typeName === 'ZodOptional') {
-      const inner = field._def?.innerType;
-      const innerTypeName = inner?._def?.typeName;
-      if (innerTypeName === 'ZodString') prop.type = 'string';
-      else if (innerTypeName === 'ZodNumber') prop.type = 'number';
-      else if (innerTypeName === 'ZodBoolean') prop.type = 'boolean';
-      else if (innerTypeName === 'ZodArray') {
-        prop.type = 'array';
-        const innerItemType = inner?._def?.type?._def?.typeName;
-        if (innerItemType === 'ZodString') prop.items = { type: 'string' };
-      } else if (innerTypeName === 'ZodEnum') {
-        prop.type = 'string';
-        prop.enum = inner._def?.values;
-      }
-      const innerDesc = inner?._def?.description;
-      if (innerDesc) prop.description = innerDesc;
-    }
-    // Handle ZodDefault
-    if (typeName === 'ZodDefault') {
-      const inner = field._def?.innerType;
-      const innerTypeName = inner?._def?.typeName;
-      if (innerTypeName === 'ZodString') prop.type = 'string';
-      else if (innerTypeName === 'ZodNumber') prop.type = 'number';
-      else if (innerTypeName === 'ZodBoolean') prop.type = 'boolean';
-      const innerDesc = inner?._def?.description;
-      if (innerDesc) prop.description = innerDesc;
-      // Remove from required since it has a default
-      const idx = required.indexOf(key);
-      if (idx >= 0) required.splice(idx, 1);
-    }
+const REQUEST_TIMEOUT_MS = Math.max(1_000, Number(process.env.LLM_TIMEOUT_MS ?? 60_000) || 60_000);
+const MAX_RETRIES = Math.min(5, Math.max(0, Number(process.env.LLM_MAX_RETRIES ?? 2) || 0));
+const MAX_TOKENS = (() => {
+  const configured = Number(process.env.LLM_MAX_TOKENS ?? 4096);
+  return Number.isInteger(configured) && configured > 0 ? configured : 4096;
+})();
 
-    properties[key] = prop;
+function getProviderConfig(): ProviderConfig {
+  const provider = (process.env.LLM_PROVIDER ?? 'opencode-zen').toLowerCase();
+  const defaults = PROVIDER_DEFAULTS[provider];
+  if (!defaults) {
+    throw new LlmError(
+      `Unknown LLM_PROVIDER "${provider}". Use openai, openrouter, or opencode-zen.`,
+      503,
+    );
   }
 
+  const apiKey = process.env.LLM_API_KEY?.trim();
+
+  if (!apiKey) {
+    throw new LlmError(
+      'LLM_API_KEY is not configured. Add it to apps/api/.env before using the assistant.',
+      503,
+    );
+  }
+
+  const baseURL = (process.env.LLM_BASE_URL?.trim() || defaults.baseURL)
+    .replace(/\/+$/, '')
+    .replace(/\/chat\/completions$/i, '');
+
   return {
-    type: 'object',
-    properties,
-    ...(required.length > 0 ? { required } : {}),
+    baseURL,
+    model: process.env.LLM_MODEL?.trim() || defaults.model,
+    apiKey,
   };
+}
+
+// zod-to-json-schema's generic signature triggers TS2589 ("excessively deep")
+// with ZodTypeAny. The runtime behavior is unaffected, so keep a narrower local
+// signature for our conversion helper.
+const convertToJsonSchema = zodToJsonSchema as unknown as (
+  schema: ZodTypeAny,
+  options: { $refStrategy: 'none'; target: 'openAi' },
+) => Record<string, unknown>;
+
+function toJsonSchema(schema: ZodTypeAny): Record<string, unknown> {
+  return convertToJsonSchema(schema, {
+    $refStrategy: 'none',
+    target: 'openAi',
+  });
+}
+
+function parseToolArguments(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Invalid JSON from the model is treated as empty arguments. The tool
+    // schema will return a helpful validation error to the model.
+  }
+
+  return {};
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    (error as { name?: unknown }).name === 'AbortError'
+  );
+}
+
+function providerErrorMessage(status: number): string {
+  if (status === 401 || status === 403) {
+    return 'The LLM provider rejected the configured API key. Check LLM_API_KEY.';
+  }
+  if (status === 404) {
+    return 'The configured LLM model was not found. Check LLM_MODEL and LLM_BASE_URL.';
+  }
+  if (status === 429) {
+    return 'The LLM provider rate limit was reached. Please try again in a moment.';
+  }
+  if (status === 400) {
+    return 'The LLM provider rejected the request. Check LLM_MODEL and LLM_BASE_URL.';
+  }
+  return `The LLM provider returned an error (${status}). Please try again later.`;
 }
 
 @Injectable()
 export class LlmService {
-  async chat(messages: LlmMessage[], tools?: Record<string, any>): Promise<LlmResponse> {
-    const config = getProviderConfig();
+  private readonly logger = new Logger(LlmService.name);
 
-    // Convert messages to OpenAI format
-    const apiMessages = messages.map((m) => {
-      if (m.role === 'tool') {
-        return {
-          role: 'tool' as const,
-          content: m.content,
-          tool_call_id: m.toolCallId!,
-        };
+  async chat(messages: LlmMessage[], tools?: LlmTools): Promise<LlmResponse> {
+    const config = getProviderConfig();
+    const body = this.buildRequestBody(config, messages, tools);
+    const data = await this.requestCompletion(config, body);
+
+    const choice = data.choices?.[0];
+    if (!choice?.message) {
+      throw new LlmError('The LLM provider returned an empty response.', 502);
+    }
+
+    const toolCalls: LlmToolCall[] = (choice.message.tool_calls ?? [])
+      .filter((toolCall) => typeof toolCall.function?.name === 'string')
+      .map((toolCall, index) => ({
+        id: toolCall.id ?? `call_${randomUUID()}_${index}`,
+        name: toolCall.function?.name as string,
+        args: parseToolArguments(toolCall.function?.arguments),
+      }));
+
+    return {
+      content: typeof choice.message.content === 'string' ? choice.message.content : '',
+      toolCalls,
+    };
+  }
+
+  private buildRequestBody(
+    config: ProviderConfig,
+    messages: LlmMessage[],
+    tools?: LlmTools,
+  ): Record<string, unknown> {
+    const apiMessages = messages.flatMap((message) => {
+      if (message.role === 'tool') {
+        if (!message.toolCallId) return [];
+        return [
+          {
+            role: 'tool' as const,
+            content: message.content,
+            tool_call_id: message.toolCallId,
+          },
+        ];
       }
-      const msg: any = { role: m.role, content: m.content };
-      if (m.role === 'assistant' && m.toolCalls) {
-        msg.tool_calls = m.toolCalls.map((tc: any) => ({
-          id: tc.id,
+
+      const apiMessage: Record<string, unknown> = {
+        role: message.role,
+        content: message.content,
+      };
+
+      if (message.role === 'assistant' && message.toolCalls?.length) {
+        apiMessage.tool_calls = message.toolCalls.map((toolCall) => ({
+          id: toolCall.id,
           type: 'function',
           function: {
-            name: tc.name,
-            arguments: typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args),
+            name: toolCall.name,
+            arguments: JSON.stringify(toolCall.args ?? {}),
           },
         }));
       }
-      return msg;
-    });
 
-    // Convert tools to OpenAI format
-    let apiTools: any[] | undefined;
-    if (tools) {
-      apiTools = Object.entries(tools).map(([name, toolDef]: [string, any]) => ({
-        type: 'function',
-        function: {
-          name,
-          description: toolDef.description || '',
-          parameters: zodToJsonSchema(toolDef.parameters),
-        },
-      }));
-    }
+      return [apiMessage];
+    });
 
     const body: Record<string, unknown> = {
       model: config.model,
       messages: apiMessages,
-      max_tokens: 4096,
+      max_tokens: MAX_TOKENS,
     };
-    if (apiTools && apiTools.length > 0) {
-      body.tools = apiTools;
+
+    if (tools && Object.keys(tools).length > 0) {
+      body.tools = Object.entries(tools).map(([name, tool]) => ({
+        type: 'function',
+        function: {
+          name,
+          description: tool.description ?? '',
+          parameters: toJsonSchema(tool.parameters),
+        },
+      }));
+      body.tool_choice = 'auto';
     }
 
-    const res = await fetch(`${config.baseURL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
+    return body;
+  }
 
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`LLM API error (${res.status}): ${errText}`);
+  private async requestCompletion(
+    config: ProviderConfig,
+    body: Record<string, unknown>,
+  ): Promise<{
+    choices?: Array<{
+      message?: {
+        content?: string | null;
+        tool_calls?: Array<{
+          id?: string;
+          function?: { name?: string; arguments?: string };
+        }>;
+      };
+    }>;
+  }> {
+    const url = `${config.baseURL}/chat/completions`;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${config.apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+
+        if (response.ok) {
+          try {
+            return await response.json();
+          } catch {
+            throw new LlmError('The LLM provider returned an invalid JSON response.', 502);
+          }
+        }
+
+        const rawError = await response.text().catch(() => '');
+        this.logger.warn(`LLM request failed with ${response.status}: ${rawError.slice(0, 500)}`);
+
+        const retryable = response.status === 429 || response.status >= 500;
+        if (retryable && attempt < MAX_RETRIES) {
+          await sleep(500 * 2 ** attempt);
+          continue;
+        }
+
+        throw new LlmError(
+          providerErrorMessage(response.status),
+          response.status === 429 ? 429 : 502,
+        );
+      } catch (error) {
+        if (error instanceof LlmError) throw error;
+
+        if (isAbortError(error)) {
+          throw new LlmError(
+            `The LLM request timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)} seconds.`,
+            504,
+          );
+        }
+
+        this.logger.warn(
+          `Could not reach LLM provider at ${config.baseURL}: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
+        );
+
+        if (attempt < MAX_RETRIES) {
+          await sleep(500 * 2 ** attempt);
+          continue;
+        }
+
+        throw new LlmError(
+          `Could not reach the LLM provider at ${config.baseURL}. Check LLM_BASE_URL and network access.`,
+          502,
+        );
+      } finally {
+        clearTimeout(timeout);
+      }
     }
 
-    const data = await res.json();
-    const choice = data.choices?.[0];
-    if (!choice) throw new Error('No response from LLM');
-
-    const toolCalls: LlmToolCall[] = (choice.message?.tool_calls || []).map((tc: any) => ({
-      id: tc.id,
-      name: tc.function?.name,
-      args: JSON.parse(tc.function?.arguments || '{}'),
-    }));
-
-    return {
-      content: choice.message?.content || '',
-      toolCalls,
-    };
+    throw new LlmError('The LLM request failed after multiple attempts.', 502);
   }
 }

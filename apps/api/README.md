@@ -1,98 +1,108 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Aya API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS 11 API for Aya, the staff augmentation management agent. It exposes the chat endpoint,
+dashboard statistics, conversation history, and a health check.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Setup
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+From the repository root:
 
 ```bash
-$ bun install
+bun install
+cp apps/api/.env.example apps/api/.env
 ```
 
-## Compile and run the project
+Configure `LLM_API_KEY`, `API_KEY`, and (optionally) `DATABASE_URL` in `apps/api/.env`. Then create
+and seed the SQLite database:
 
 ```bash
-# development
-$ bun run start
-
-# watch mode
-$ bun run start:dev
-
-# production mode
-$ bun run start:prod
+bun run db:push
+bun run db:seed
 ```
 
-## Run tests
+## Run
 
 ```bash
-# unit tests
-$ bun run test
+# development (watch mode)
+bun run dev
 
-# e2e tests
-$ bun run test:e2e
-
-# test coverage
-$ bun run test:cov
+# production
+bun run build
+node dist/main.js
 ```
 
-## Deployment
+The API listens on `API_PORT` (default `3001`).
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Environment
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | SQLite URL, e.g. `file:./dev.db` |
+| `LLM_PROVIDER` | No | `opencode-zen` (default), `openai`, `openrouter` |
+| `LLM_API_KEY` | For chat | Provider API key |
+| `LLM_BASE_URL` | No | Override the provider base URL |
+| `LLM_MODEL` | No | Override the provider model |
+| `LLM_TIMEOUT_MS` | No | Request timeout (default 60000) |
+| `LLM_MAX_RETRIES` | No | Retry count for 429/5xx/network errors (default 2) |
+| `LLM_MAX_TOKENS` | No | Maximum response tokens (default 4096) |
+| `API_PORT` | No | HTTP port (default 3001) |
+| `API_KEY` | Production | Shared key for `x-api-key`/Bearer auth |
+| `CORS_ORIGINS` | No | Comma-separated origin allowlist |
+
+Relative SQLite paths resolve from `packages/db/prisma`.
+
+## Endpoints
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/` | GET | Public | `Hello World!` |
+| `/health` | GET | Public | Service status and uptime |
+| `/stats` | GET | API key | Dashboard counts, utilization, alert total |
+| `/conversations` | GET | API key | Recent conversations with previews |
+| `/conversations/:id` | GET | API key | Conversation messages |
+| `/conversations/:id` | DELETE | API key | Delete a conversation |
+| `/agent/chat` | POST | API key | Chat with the agent |
 
 ```bash
-$ bun install -g @nestjs/mau
-$ mau deploy
+curl -X POST http://localhost:3001/agent/chat \
+  -H 'content-type: application/json' \
+  -H 'x-api-key: your-key' \
+  -d '{"message":"Who is on the bench?"}'
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+`/agent/chat` accepts `{ message, conversationId? }`, validates it with Zod, and returns
+`{ conversationId, content }`. Requests are rate limited to 20 per minute by default.
 
-## Resources
+## Agent tools
 
-Check out a few resources that may come in handy when working with NestJS:
+| Tool | Description |
+|------|-------------|
+| `query_roster` | Filter developers by skills, availability, seniority, or client |
+| `match_developers` | Rank developers for a project requirement |
+| `get_utilization` | Utilization metrics and breakdowns |
+| `check_contracts` | Contract status, rates, and renewals |
+| `get_performance` | Performance metrics by developer, client, or period |
+| `get_alerts` | Bench, contract, and performance alerts |
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Tool arguments are validated with Zod. Tool results are persisted with the conversation, while
+only user/assistant messages are replayed as model context.
 
-## Support
+## Tests
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+bun run test
+DATABASE_URL="file:./test-e2e.db" bun run --cwd packages/db push
+bun run test:e2e
+```
 
-## Stay in touch
+Unit tests cover the root controller. E2E tests cover the public routes, invalid chat bodies, and
+route setup. No real LLM calls are made.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## Security
 
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- Helmet security headers and `x-powered-by` disabled.
+- CORS allowlist from `CORS_ORIGINS`.
+- Constant-time API-key comparison.
+- Global exception filter that does not leak stack traces or provider payloads.
+- LLM provider errors are mapped to safe, actionable messages.
+- Production startup fails if `API_KEY` is missing.

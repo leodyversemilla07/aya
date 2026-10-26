@@ -1,13 +1,48 @@
+import 'dotenv/config';
+
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-async function seed() {
-  console.log('Seeding Aya database...');
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-  // Clean existing data
-  await prisma.message.deleteMany();
-  await prisma.conversation.deleteMany();
+function startOfToday(): Date {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  return today;
+}
+
+function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * DAY_MS);
+}
+
+function addMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  result.setUTCMonth(result.getUTCMonth() + months);
+  return result;
+}
+
+function currentQuarter(date: Date): string {
+  return `${date.getUTCFullYear()}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
+}
+
+function assertSafeToSeed() {
+  if (process.env.NODE_ENV === 'production' && process.env.SEED_FORCE !== 'true') {
+    throw new Error(
+      'Refusing to seed a production database. Set SEED_FORCE=true to override this guard.',
+    );
+  }
+}
+
+async function seed() {
+  assertSafeToSeed();
+
+  const today = startOfToday();
+  const quarter = currentQuarter(today);
+  console.log(`Seeding Aya demo data for ${today.toISOString().slice(0, 10)}...`);
+
+  // Business data is reset so the demo stays deterministic. Conversations are
+  // intentionally preserved unless SEED_RESET_CONVERSATIONS=true is set.
   await prisma.performance.deleteMany();
   await prisma.contract.deleteMany();
   await prisma.assignment.deleteMany();
@@ -16,26 +51,33 @@ async function seed() {
   await prisma.developer.deleteMany();
   await prisma.client.deleteMany();
 
+  if (process.env.SEED_RESET_CONVERSATIONS === 'true') {
+    await prisma.message.deleteMany();
+    await prisma.conversation.deleteMany();
+  }
+
   // ─── Clients ────────────────────────────────────────
 
-  const unionbank = await prisma.client.create({
-    data: { name: 'UnionBank', industry: 'fintech' },
-  });
-  const ayalaMalls = await prisma.client.create({
-    data: { name: 'Ayala Malls', industry: 'retail' },
-  });
-  const robinsons = await prisma.client.create({
-    data: { name: 'Robinsons Land', industry: 'real-estate' },
-  });
-  const metrobank = await prisma.client.create({
-    data: { name: 'Metrobank', industry: 'banking' },
-  });
-  const paymongo = await prisma.client.create({
-    data: { name: 'PayMongo', industry: 'fintech' },
-  });
-  const grover = await prisma.client.create({
-    data: { name: 'Groover Delivery', industry: 'logistics' },
-  });
+  const clientData = [
+    { name: 'UnionBank', industry: 'fintech' },
+    { name: 'Ayala Malls', industry: 'retail' },
+    { name: 'Robinsons Land', industry: 'real-estate' },
+    { name: 'Metrobank', industry: 'banking' },
+    { name: 'PayMongo', industry: 'fintech' },
+    { name: 'Groover Delivery', industry: 'logistics' },
+  ];
+
+  const clientsByName = new Map<string, { id: string; name: string }>();
+  for (const client of clientData) {
+    const created = await prisma.client.create({ data: client });
+    clientsByName.set(created.name, created);
+  }
+
+  const clientId = (name: string): string => {
+    const client = clientsByName.get(name);
+    if (!client) throw new Error(`Unknown client in seed data: ${name}`);
+    return client.id;
+  };
 
   // ─── Contacts ───────────────────────────────────────
 
@@ -45,27 +87,44 @@ async function seed() {
         name: 'Maria Santos',
         role: 'VP Digital',
         email: 'maria@unionbank.ph',
-        clientId: unionbank.id,
+        clientId: clientId('UnionBank'),
       },
       {
         name: 'Juan Reyes',
         role: 'Tech Lead',
         email: 'juan@ayalamalls.com.ph',
-        clientId: ayalaMalls.id,
+        clientId: clientId('Ayala Malls'),
       },
-      { name: 'Carla Lim', role: 'CTO', email: 'carla@robinsons.com', clientId: robinsons.id },
+      {
+        name: 'Carla Lim',
+        role: 'CTO',
+        email: 'carla@robinsons.com',
+        clientId: clientId('Robinsons Land'),
+      },
       {
         name: 'Antonio Cruz',
         role: 'Product Manager',
         email: 'antonio@metrobank.com.ph',
-        clientId: metrobank.id,
+        clientId: clientId('Metrobank'),
+      },
+      {
+        name: 'Liza Fernandez',
+        role: 'Engineering Manager',
+        email: 'liza@paymongo.com',
+        clientId: clientId('PayMongo'),
+      },
+      {
+        name: 'Marco Villanueva',
+        role: 'Head of Platform',
+        email: 'marco@groover.ph',
+        clientId: clientId('Groover Delivery'),
       },
     ],
   });
 
   // ─── Developers ─────────────────────────────────────
 
-  const devs = [
+  const developers = [
     {
       name: 'Juan Dela Cruz',
       email: 'juan.dc@whitecloak.com',
@@ -214,223 +273,337 @@ async function seed() {
     },
   ];
 
-  for (const devData of devs) {
-    const dev = await prisma.developer.create({
+  const developersByName = new Map<string, { id: string; name: string }>();
+  for (const developer of developers) {
+    const { skills, ...data } = developer;
+    const created = await prisma.developer.create({
       data: {
-        name: devData.name,
-        email: devData.email,
-        role: devData.role,
-        seniority: devData.seniority,
+        ...data,
+        skills: { create: skills },
       },
     });
-
-    for (const skill of devData.skills) {
-      await prisma.skill.create({
-        data: {
-          name: skill.name,
-          level: skill.level,
-          yearsExp: skill.yearsExp,
-          developerId: dev.id,
-        },
-      });
-    }
+    developersByName.set(created.name, created);
   }
 
-  // ─── Assignments ────────────────────────────────────
+  const developerId = (name: string): string => {
+    const developer = developersByName.get(name);
+    if (!developer) throw new Error(`Unknown developer in seed data: ${name}`);
+    return developer.id;
+  };
 
-  const allDevs = await prisma.developer.findMany();
+  // Rico is on the bench and has been for 45 days.
+  await prisma.developer.update({
+    where: { id: developerId('Rico Tan') },
+    data: { benchSince: addDays(today, -45) },
+  });
+
+  // ─── Assignments ────────────────────────────────────
 
   const assignmentData = [
     {
       devName: 'Juan Dela Cruz',
       clientName: 'UnionBank',
       projectName: 'UnionBank Online v3',
-      status: 'active',
+      endInDays: 90,
     },
     {
       devName: 'Maria Santos',
       clientName: 'Ayala Malls',
       projectName: 'Pasyal Loyalty App',
-      status: 'active',
+      endInDays: 150,
     },
     {
       devName: 'Pedro Reyes',
       clientName: 'Ayala Malls',
       projectName: 'Pasyal Loyalty App',
-      status: 'active',
+      endInDays: 60,
     },
     {
       devName: 'Ana Garcia',
       clientName: 'UnionBank',
       projectName: 'UnionBank Portal',
-      status: 'active',
+      endInDays: 210,
     },
     {
       devName: 'Carlos Mendoza',
       clientName: 'Robinsons Land',
       projectName: 'Robinsons Hotels App',
-      status: 'active',
+      endInDays: 120,
     },
     {
       devName: 'Bea Villanueva',
       clientName: 'Robinsons Land',
       projectName: 'Robinsons Hotels App',
-      status: 'active',
+      endInDays: 45,
     },
     {
       devName: 'Diana Lopez',
       clientName: 'Groover Delivery',
       projectName: 'Groover iOS App',
-      status: 'active',
+      endInDays: 180,
     },
     {
       devName: 'Miguel Aquino',
       clientName: 'UnionBank',
       projectName: 'UnionBank Infra',
-      status: 'active',
+      endInDays: 240,
     },
     {
       devName: 'Katrina Ramos',
       clientName: 'Robinsons Land',
       projectName: 'Robinsons Hotels QA',
-      status: 'active',
+      endInDays: 30,
     },
     {
       devName: 'Jerome Bautista',
       clientName: 'PayMongo',
       projectName: 'PayMongo Dashboard',
-      status: 'active',
+      endInDays: 75,
     },
     {
       devName: 'Patricia Chua',
       clientName: 'Metrobank',
       projectName: 'Metrobank App Design',
-      status: 'active',
+      endInDays: 100,
     },
   ];
 
-  const clientsByName: Record<string, typeof unionbank> = {
-    UnionBank: unionbank,
-    'Ayala Malls': ayalaMalls,
-    'Robinsons Land': robinsons,
-    Metrobank: metrobank,
-    PayMongo: paymongo,
-    'Groover Delivery': grover,
-  };
-
-  for (const a of assignmentData) {
-    const dev = allDevs.find((d) => d.name === a.devName);
-    const client = clientsByName[a.clientName];
-    if (dev && client) {
-      await prisma.assignment.create({
-        data: {
-          developerId: dev.id,
-          clientId: client.id,
-          projectName: a.projectName,
-          status: a.status,
-          startDate: new Date('2025-10-01'),
-          endDate: new Date('2026-09-30'),
-        },
-      });
-
-      // Set benchSince for Rico (no assignment)
-      // He's not in the list, so he stays on bench
-    }
-  }
-
-  // Rico Tan is not assigned - set as on bench
-  const rico = allDevs.find((d) => d.name === 'Rico Tan');
-  if (rico) {
-    await prisma.developer.update({
-      where: { id: rico.id },
-      data: { benchSince: new Date('2026-03-15') },
+  for (const assignment of assignmentData) {
+    await prisma.assignment.create({
+      data: {
+        developerId: developerId(assignment.devName),
+        clientId: clientId(assignment.clientName),
+        projectName: assignment.projectName,
+        status: 'active',
+        startDate: addMonths(today, -6),
+        endDate: addDays(today, assignment.endInDays),
+      },
     });
   }
 
   // ─── Contracts ──────────────────────────────────────
 
   const contractData = [
-    { devName: 'Juan Dela Cruz', clientName: 'UnionBank', rate: 180000, endDate: '2026-04-30' },
-    { devName: 'Maria Santos', clientName: 'Ayala Malls', rate: 170000, endDate: '2026-08-31' },
-    { devName: 'Pedro Reyes', clientName: 'Ayala Malls', rate: 120000, endDate: '2026-06-30' },
-    { devName: 'Ana Garcia', clientName: 'UnionBank', rate: 190000, endDate: '2026-12-31' },
+    {
+      devName: 'Juan Dela Cruz',
+      clientName: 'UnionBank',
+      rate: 180_000,
+      endInDays: 10,
+      status: 'active',
+    },
+    {
+      devName: 'Maria Santos',
+      clientName: 'Ayala Malls',
+      rate: 170_000,
+      endInDays: 120,
+      status: 'active',
+    },
+    {
+      devName: 'Pedro Reyes',
+      clientName: 'Ayala Malls',
+      rate: 120_000,
+      endInDays: 60,
+      status: 'active',
+    },
+    {
+      devName: 'Ana Garcia',
+      clientName: 'UnionBank',
+      rate: 190_000,
+      endInDays: 200,
+      status: 'active',
+    },
     {
       devName: 'Carlos Mendoza',
       clientName: 'Robinsons Land',
-      rate: 220000,
-      endDate: '2026-09-30',
+      rate: 220_000,
+      endInDays: 150,
+      status: 'active',
     },
     {
       devName: 'Bea Villanueva',
       clientName: 'Robinsons Land',
-      rate: 130000,
-      endDate: '2026-05-15',
+      rate: 130_000,
+      endInDays: 5,
+      status: 'renewing',
     },
-    { devName: 'Diana Lopez', clientName: 'Groover Delivery', rate: 175000, endDate: '2026-07-31' },
-    { devName: 'Miguel Aquino', clientName: 'UnionBank', rate: 200000, endDate: '2026-11-30' },
-    { devName: 'Katrina Ramos', clientName: 'Robinsons Land', rate: 110000, endDate: '2026-04-20' },
-    { devName: 'Jerome Bautista', clientName: 'PayMongo', rate: 125000, endDate: '2026-05-31' },
-    { devName: 'Patricia Chua', clientName: 'Metrobank', rate: 160000, endDate: '2026-10-31' },
+    {
+      devName: 'Diana Lopez',
+      clientName: 'Groover Delivery',
+      rate: 175_000,
+      endInDays: 90,
+      status: 'active',
+    },
+    {
+      devName: 'Miguel Aquino',
+      clientName: 'UnionBank',
+      rate: 200_000,
+      endInDays: 180,
+      status: 'active',
+    },
+    {
+      devName: 'Katrina Ramos',
+      clientName: 'Robinsons Land',
+      rate: 110_000,
+      endInDays: -30,
+      status: 'expired',
+    },
+    {
+      devName: 'Jerome Bautista',
+      clientName: 'PayMongo',
+      rate: 125_000,
+      endInDays: 25,
+      status: 'active',
+    },
+    {
+      devName: 'Patricia Chua',
+      clientName: 'Metrobank',
+      rate: 160_000,
+      endInDays: 300,
+      status: 'active',
+    },
   ];
 
-  for (const c of contractData) {
-    const dev = allDevs.find((d) => d.name === c.devName);
-    const client = clientsByName[c.clientName];
-    if (dev && client) {
-      await prisma.contract.create({
-        data: {
-          developerId: dev.id,
-          clientId: client.id,
-          startDate: new Date('2025-10-01'),
-          endDate: new Date(c.endDate),
-          billingRate: c.rate,
-          status: 'active',
-        },
-      });
-    }
+  for (const contract of contractData) {
+    await prisma.contract.create({
+      data: {
+        developerId: developerId(contract.devName),
+        clientId: clientId(contract.clientName),
+        startDate: addMonths(today, -6),
+        endDate: addDays(today, contract.endInDays),
+        billingRate: contract.rate,
+        status: contract.status,
+      },
+    });
   }
 
   // ─── Performance ────────────────────────────────────
 
-  const perfData = [
-    { devName: 'Juan Dela Cruz', velocity: 38, prMerge: 1.1, quality: 92, rating: 4.5 },
-    { devName: 'Maria Santos', velocity: 34, prMerge: 1.3, quality: 88, rating: 4.2 },
-    { devName: 'Pedro Reyes', velocity: 28, prMerge: 1.8, quality: 82, rating: 3.8 },
-    { devName: 'Ana Garcia', velocity: 36, prMerge: 0.9, quality: 95, rating: 4.7 },
-    { devName: 'Carlos Mendoza', velocity: 40, prMerge: 1.0, quality: 91, rating: 4.6 },
-    { devName: 'Bea Villanueva', velocity: 30, prMerge: 1.5, quality: 85, rating: 4.0 },
-    { devName: 'Diana Lopez', velocity: 32, prMerge: 1.4, quality: 89, rating: 4.3 },
-    { devName: 'Miguel Aquino', velocity: 0, prMerge: 0.5, quality: 94, rating: 4.8 },
-    { devName: 'Katrina Ramos', velocity: 0, prMerge: 1.2, quality: 90, rating: 4.1 },
-    { devName: 'Jerome Bautista', velocity: 26, prMerge: 2.0, quality: 78, rating: 3.5 },
-    { devName: 'Patricia Chua', velocity: 0, prMerge: 0, quality: 93, rating: 4.4 },
+  const performanceData = [
+    {
+      devName: 'Juan Dela Cruz',
+      velocity: 38,
+      prMerge: 1.1,
+      quality: 92,
+      rating: 4.5,
+      notes: 'Strong delivery and code review habits.',
+    },
+    {
+      devName: 'Maria Santos',
+      velocity: 34,
+      prMerge: 1.3,
+      quality: 88,
+      rating: 4.2,
+      notes: 'Reliable mobile delivery.',
+    },
+    {
+      devName: 'Pedro Reyes',
+      velocity: 28,
+      prMerge: 1.8,
+      quality: 82,
+      rating: 3.8,
+      notes: 'Solid contributor; growing into larger features.',
+    },
+    {
+      devName: 'Ana Garcia',
+      velocity: 36,
+      prMerge: 0.9,
+      quality: 95,
+      rating: 4.7,
+      notes: 'Excellent backend quality and velocity.',
+    },
+    {
+      devName: 'Carlos Mendoza',
+      velocity: 40,
+      prMerge: 1.0,
+      quality: 91,
+      rating: 4.6,
+      notes: 'Strong technical lead for the account.',
+    },
+    {
+      devName: 'Bea Villanueva',
+      velocity: 30,
+      prMerge: 1.5,
+      quality: 85,
+      rating: 4.0,
+      notes: 'Consistent frontend delivery.',
+    },
+    {
+      devName: 'Diana Lopez',
+      velocity: 32,
+      prMerge: 1.4,
+      quality: 89,
+      rating: 4.3,
+      notes: 'Strong iOS ownership.',
+    },
+    {
+      devName: 'Miguel Aquino',
+      velocity: 0,
+      prMerge: 0.5,
+      quality: 94,
+      rating: 4.8,
+      notes: 'Platform work measured outside sprint velocity.',
+    },
+    {
+      devName: 'Katrina Ramos',
+      velocity: 0,
+      prMerge: 1.2,
+      quality: 90,
+      rating: 4.1,
+      notes: 'QA automation and release support.',
+    },
+    {
+      devName: 'Jerome Bautista',
+      velocity: 26,
+      prMerge: 2.0,
+      quality: 78,
+      rating: 3.5,
+      notes: 'Needs support on test coverage and review turnaround.',
+    },
+    {
+      devName: 'Patricia Chua',
+      velocity: 0,
+      prMerge: 0,
+      quality: 93,
+      rating: 4.4,
+      notes: 'Design work measured by milestone delivery.',
+    },
   ];
 
-  for (const p of perfData) {
-    const dev = allDevs.find((d) => d.name === p.devName);
-    if (dev) {
-      await prisma.performance.create({
-        data: {
-          developerId: dev.id,
-          period: '2026-Q1',
-          velocity: p.velocity,
-          prMergeTime: p.prMerge,
-          codeQuality: p.quality,
-          clientRating: p.rating,
-        },
-      });
-    }
+  for (const performance of performanceData) {
+    await prisma.performance.create({
+      data: {
+        developerId: developerId(performance.devName),
+        period: quarter,
+        velocity: performance.velocity,
+        prMergeTime: performance.prMerge,
+        codeQuality: performance.quality,
+        clientRating: performance.rating,
+        notes: performance.notes,
+      },
+    });
   }
 
+  const counts = await Promise.all([
+    prisma.client.count(),
+    prisma.developer.count(),
+    prisma.skill.count(),
+    prisma.assignment.count(),
+    prisma.contract.count(),
+    prisma.performance.count(),
+  ]);
+
   console.log('Seed complete!');
-  console.log(`  - ${await prisma.client.count()} clients`);
-  console.log(`  - ${await prisma.developer.count()} developers`);
-  console.log(`  - ${await prisma.skill.count()} skills`);
-  console.log(`  - ${await prisma.assignment.count()} assignments`);
-  console.log(`  - ${await prisma.contract.count()} contracts`);
-  console.log(`  - ${await prisma.performance.count()} performance records`);
+  console.log(`  - ${counts[0]} clients`);
+  console.log(`  - ${counts[1]} developers`);
+  console.log(`  - ${counts[2]} skills`);
+  console.log(`  - ${counts[3]} assignments`);
+  console.log(`  - ${counts[4]} contracts`);
+  console.log(`  - ${counts[5]} performance records (${quarter})`);
 }
 
 seed()
-  .catch(console.error)
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  })
   .finally(() => prisma.$disconnect());

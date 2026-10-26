@@ -37,14 +37,30 @@
       "unsafeParameterDecoratorsEnabled": true
     }
   },
+  "overrides": [
+    {
+      "include": ["apps/api/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useImportType": "off"
+          }
+        }
+      }
+    }
+  ],
   "files": {
     "ignore": [
       "node_modules",
+      "apps/web/next-env.d.ts",
       "dist",
       ".next",
+      ".turbo",
+      "coverage",
       "*.generated.*",
       "*.css",
-      "packages/db/prisma/dev.db"
+      "packages/db/prisma/dev.db",
+      "packages/db/prisma/migrations"
     ]
   }
 }

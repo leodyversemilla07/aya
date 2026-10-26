@@ -1,9 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { prisma } from '@workspace/db';
-import { LlmService } from '../llm/llm.service';
+import { type LlmMessage, LlmService } from '../llm/llm.service';
 import { executeTool, tools } from './tools';
 
-const SYSTEM_PROMPT = `You are Aya, an AI assistant for staff augmentation management at a software development company.
+const MAX_ITERATIONS = 5;
+const HISTORY_LIMIT = 20;
+
+function buildSystemPrompt(): string {
+  const today = new Date().toISOString().slice(0, 10);
+
+  return `You are Aya, an AI assistant for staff augmentation management at a software development company.
+
+Today's date is ${today}. Always use this date when reasoning about availability, contract expiry, and renewal deadlines. Never invent dates, developers, clients, contracts, or metrics.
 
 Your job is to help managers:
 - Find available developers by skills, availability, or client
@@ -13,24 +21,36 @@ Your job is to help managers:
 - Plan developer transitions between clients
 - Generate proactive alerts about risks
 
-You have access to tools to query the developer roster, clients, assignments, contracts, and performance data.
+You have access to tools that query the developer roster, clients, assignments, contracts, and performance data. Use them whenever the answer depends on company data. If a tool returns an error, explain the problem briefly and ask for the missing detail instead of guessing.
 
-Always be concise, data-driven, and actionable. When presenting options, rank them with reasoning.
-Use tables or lists for readability. Flag risks proactively.`;
+Always be concise, data-driven, and actionable. When presenting options, rank them with reasoning. Use tables or lists for readability. Flag risks proactively.`;
+}
+
+interface PendingMessage {
+  role: 'assistant' | 'tool';
+  content: string;
+  toolCalls?: string | null;
+  toolCallId?: string | null;
+}
 
 @Injectable()
 export class AgentService {
+  private readonly logger = new Logger(AgentService.name);
+
   constructor(private readonly llmService: LlmService) {}
 
   async chat(message: string, conversationId?: string) {
-    // Get or create conversation
-    let conversation: any = null;
-    if (conversationId) {
-      conversation = await prisma.conversation.findUnique({
-        where: { id: conversationId },
-        include: { messages: { orderBy: { createdAt: 'asc' } } },
-      });
+    let conversation = conversationId
+      ? await prisma.conversation.findUnique({
+          where: { id: conversationId },
+          include: { messages: { orderBy: { createdAt: 'asc' } } },
+        })
+      : null;
+
+    if (conversationId && !conversation) {
+      throw new NotFoundException(`Conversation "${conversationId}" was not found.`);
     }
+
     if (!conversation) {
       conversation = await prisma.conversation.create({
         data: { title: message.slice(0, 80) },
@@ -38,31 +58,27 @@ export class AgentService {
       });
     }
 
-    // Build messages for LLM
-    const messages: any[] = [
-      { role: 'system' as const, content: SYSTEM_PROMPT },
-      ...conversation.messages.map((m) => {
-        const msg: any = {
-          role: m.role,
-          content: m.content,
-        };
-        if (m.toolCallId) {
-          msg.toolCallId = m.toolCallId;
-        }
-        if (m.toolCalls) {
-          try {
-            msg.toolCalls = JSON.parse(m.toolCalls);
-          } catch (parseErr) {
-            // Invalid JSON stored - skip tool calls
-            console.warn('Failed to parse toolCalls from message:', m.id, parseErr);
-          }
-        }
-        return msg;
-      }),
-      { role: 'user' as const, content: message },
+    // Only user/assistant messages are sent back to the model. Tool traffic is
+    // only needed within a single turn, and old tool-call groups can become
+    // invalid when history is truncated.
+    const history: LlmMessage[] = conversation.messages
+      .filter(
+        (storedMessage) =>
+          storedMessage.role === 'user' ||
+          (storedMessage.role === 'assistant' && storedMessage.content.trim().length > 0),
+      )
+      .slice(-HISTORY_LIMIT)
+      .map((storedMessage) => ({
+        role: storedMessage.role as 'user' | 'assistant',
+        content: storedMessage.content,
+      }));
+
+    const messages: LlmMessage[] = [
+      { role: 'system', content: buildSystemPrompt() },
+      ...history,
+      { role: 'user', content: message },
     ];
 
-    // Save user message
     await prisma.message.create({
       data: {
         role: 'user',
@@ -71,70 +87,90 @@ export class AgentService {
       },
     });
 
-    // Agent loop: LLM decides -> execute tools -> feed back -> repeat
-    let response = await this.llmService.chat(messages, tools as any);
+    const pendingMessages: PendingMessage[] = [];
+    let response = await this.llmService.chat(messages, tools);
     let iterations = 0;
-    const MAX_ITERATIONS = 5;
 
-    while (response.toolCalls && response.toolCalls.length > 0 && iterations < MAX_ITERATIONS) {
-      // Execute each tool call
-      const toolResults: Array<{ role: 'tool'; content: string; toolCallId: string }> = [];
-      for (const toolCall of response.toolCalls) {
-        const result = await executeTool(toolCall.name, toolCall.args);
-        toolResults.push({
+    while (response.toolCalls.length > 0 && iterations < MAX_ITERATIONS) {
+      const toolResults = await Promise.all(
+        response.toolCalls.map(async (toolCall) => ({
           role: 'tool' as const,
-          content: JSON.stringify(result),
+          content: JSON.stringify(await executeTool(toolCall.name, toolCall.args)),
           toolCallId: toolCall.id,
+        })),
+      );
+
+      pendingMessages.push({
+        role: 'assistant',
+        content: response.content,
+        toolCalls: JSON.stringify(response.toolCalls),
+      });
+      for (const toolResult of toolResults) {
+        pendingMessages.push({
+          role: 'tool',
+          content: toolResult.content,
+          toolCallId: toolResult.toolCallId,
         });
       }
 
-      // Add assistant message (with tool calls) and tool results to conversation
       messages.push({
         role: 'assistant',
-        content: response.content || '',
+        content: response.content,
         toolCalls: response.toolCalls,
       });
       messages.push(...toolResults);
 
-      // Save assistant message (with tool calls) to DB
-      const assistantDbMsg = await prisma.message.create({
-        data: {
-          role: 'assistant',
-          content: response.content || '',
-          toolCalls: response.toolCalls.length > 0 ? JSON.stringify(response.toolCalls) : null,
-          conversationId: conversation.id,
-        },
+      response = await this.llmService.chat(messages, tools);
+      iterations++;
+    }
+
+    if (response.toolCalls.length > 0) {
+      this.logger.warn(
+        `Conversation ${conversation.id} reached the tool iteration limit; requesting a final answer.`,
+      );
+      messages.push({
+        role: 'user',
+        content:
+          'Please provide your final answer using the tool results already gathered. Do not call any more tools.',
       });
 
-      // Save tool result messages to DB
-      for (const tr of toolResults) {
-        await prisma.message.create({
+      const finalResponse = await this.llmService.chat(messages);
+      response = {
+        content:
+          finalResponse.content.trim() ||
+          'I gathered the data but could not produce a final answer. Please refine your question.',
+        toolCalls: [],
+      };
+    }
+
+    const content =
+      response.content.trim() ||
+      'I could not generate a response for that request. Please try rephrasing it.';
+
+    pendingMessages.push({ role: 'assistant', content });
+
+    await prisma.$transaction(async (transaction) => {
+      for (const pendingMessage of pendingMessages) {
+        await transaction.message.create({
           data: {
-            role: tr.role,
-            content: tr.content,
-            toolCallId: tr.toolCallId,
+            role: pendingMessage.role,
+            content: pendingMessage.content,
+            toolCalls: pendingMessage.toolCalls ?? null,
+            toolCallId: pendingMessage.toolCallId ?? null,
             conversationId: conversation.id,
           },
         });
       }
 
-      // Get next response from LLM
-      response = await this.llmService.chat(messages, tools as any);
-      iterations++;
-    }
-
-    // Save assistant response
-    await prisma.message.create({
-      data: {
-        role: 'assistant',
-        content: response.content,
-        conversationId: conversation.id,
-      },
+      await transaction.conversation.update({
+        where: { id: conversation.id },
+        data: { updatedAt: new Date() },
+      });
     });
 
     return {
       conversationId: conversation.id,
-      content: response.content,
+      content,
     };
   }
 }

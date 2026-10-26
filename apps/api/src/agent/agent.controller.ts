@@ -1,21 +1,16 @@
-import { Body, Controller, Post, HttpCode, HttpStatus } from '@nestjs/common';
+import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import { z } from 'zod';
 import { AgentService } from './agent.service';
 
-interface ChatBody {
-  message: string;
-  conversationId?: string;
-}
-
-function isValidChatBody(body: unknown): body is ChatBody {
-  return (
-    typeof body === 'object' &&
-    body !== null &&
-    'message' in body &&
-    typeof (body as ChatBody).message === 'string' &&
-    (body as ChatBody).message.length > 0 &&
-    (body as ChatBody).message.length <= 10000
-  );
-}
+const chatRequestSchema = z.object({
+  message: z
+    .string()
+    .trim()
+    .min(1, 'message must be a non-empty string')
+    .max(10_000, 'message must be 10000 characters or fewer'),
+  conversationId: z.string().trim().min(1).optional(),
+});
 
 @Controller('agent')
 export class AgentController {
@@ -23,12 +18,16 @@ export class AgentController {
 
   @Post('chat')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async chat(@Body() body: unknown) {
-    if (!isValidChatBody(body)) {
-      return {
-        error: 'Invalid request: message is required and must be a non-empty string (max 10000 chars)',
-      };
+    const parsed = chatRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        message: parsed.error.issues.map((issue) => issue.message),
+        error: 'Bad Request',
+      });
     }
-    return this.agentService.chat(body.message, body.conversationId);
+
+    return this.agentService.chat(parsed.data.message, parsed.data.conversationId);
   }
 }

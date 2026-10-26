@@ -2,153 +2,246 @@
 
 ## Overview
 
-**Aya** is an AI-powered staff augmentation management agent that helps managers find available developers, match skills to projects, track utilization, monitor contracts, and flag risks through natural language conversation.
+**Aya** is an AI-powered staff augmentation management agent that helps managers find available
+developers, match skills to projects, track utilization, monitor contracts, and flag risks through
+natural language conversation.
 
-## Project Goals
+## Project goals
 
-1. **Staff Augmentation Intelligence** — AI assistant for managing developer resources
-2. **Conversational Interface** — Natural language queries about team and projects
-3. **Data-Driven Decisions** — Utilization metrics, contract tracking, performance data
+1. **Staff augmentation intelligence** — AI assistant for managing developer resources
+2. **Conversational interface** — natural language queries about teams and projects
+3. **Data-driven decisions** — utilization metrics, contract tracking, performance data
+4. **Safe deployment** — API-key auth, server-side proxy, sanitized errors, rate limiting
 
 ## Architecture
 
-### Technology Stack
+### Technology stack
 
 | Component | Technology | Version |
 |-----------|------------|---------|
-| Backend | NestJS | ^10 |
+| Backend | NestJS | 11 |
 | Frontend | Next.js | 16 |
-| Database | PostgreSQL | 16+ |
-| ORM | Prisma | ^5 |
-| UI | shadcn/ui | latest |
-| LLM | OpenAI-compatible | — |
-| Package Manager | Bun | latest |
-| Monorepo | Turborepo | latest |
+| Database | SQLite | 3 |
+| ORM | Prisma | 6 |
+| UI | shadcn/ui, Tailwind CSS | latest |
+| LLM | OpenAI-compatible API | — |
+| Validation | Zod | 3 |
+| Package manager | Bun | 1.3 |
+| Monorepo | Turborepo | 2 |
+| Lint/format | Biome | 1.9 |
 
-### Project Structure
+### Project structure
 
 ```
 apps/
-  api/         NestJS backend
+  api/
     src/
-      agent/   Agent controller, service, tools
-      llm/    LLM integration
-  web/        Next.js frontend
+      agent/        Agent controller, loop, tool handlers, tool schemas
+      auth/         API-key guard and @Public decorator
+      llm/          OpenAI-compatible provider client
+      app.*         Root, health, stats, conversation routes
+  web/
     app/
-      page.tsx  Dashboard
-      chat/    Chat page
+      page.tsx      Dashboard with live stats and chat
+      chat/         Dedicated chat page
+      api/aya/      Server-side proxy to the NestJS API
+    components/
+      chat/         ChatProvider, messages, composer, welcome
+      dashboard/    Stats cards and quick actions
 packages/
-  db/         Prisma schema and client
-  ui/         shadcn/ui components
+  db/               Prisma schema, migrations, seed data
+  ui/               shadcn/ui component library
 ```
 
 ## Features
 
-### Core Functionality
+### Core functionality
 
-1. **Developer Roster Search**
-   - Query by skills, availability, seniority, client
-   - Filter by technology stack, experience level
+1. **Developer roster search**
+   - Query by skills (case-insensitive, partial matches), availability, seniority, client
+   - Bench and assignment status included in results
 
-2. **Talent Matching**
-   - Match developers to project requirements
-   - Rank by skill fit, availability, past performance
+2. **Talent matching**
+   - Rank developers by skill fit, availability, industry experience, seniority, performance
+   - Returns matched and missing skills with scoring reasons
 
-3. **Utilization Tracking**
+3. **Utilization tracking**
    - Team capacity metrics
-   - Active vs bench ratio
+   - Active vs bench ratio, breakdowns by client and seniority
 
-4. **Contract Management**
-   - Contract status overview
-   - Renewal reminders
+4. **Contract management**
+   - Contract status, billing rates, and days until expiry
+   - Filters by client, status, and expiry window
 
-5. **Performance Monitoring**
-   - Individual and team metrics
-   - Historical trends
+5. **Performance monitoring**
+   - Individual and team metrics: velocity, PR merge time, code quality, client rating
+   - Optional period filter
 
-6. **Risk Alerts**
-   - Bench time warnings
-   - Expiring contracts
-   - Performance issues
+6. **Risk alerts**
+   - Bench time over 14 days
+   - Contracts expiring within 30 days or already expired
+   - Performance concerns (code quality, merge time, client rating)
 
-### Agent Loop
+### Agent loop
 
 ```
-User Query → LLM Reasoning → Tool Calling → Database Query → Formatted Response
+User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Query → Formatted Response
 ```
 
-## API Endpoints
+- Tool iterations are capped; if the cap is reached, the agent is asked for a final answer using
+  the results already gathered.
+- Conversation history is limited to the most recent 20 user/assistant messages.
+- Tool calls and results are persisted for auditability; only user/assistant messages are replayed
+  to the model.
+- The system prompt includes today's date so expiry reasoning is deterministic.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/agent/chat` | POST | Chat with Aya agent |
+## API endpoints
 
-### Request/Response
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/` | GET | Public | Service greeting |
+| `/health` | GET | Public | Health check with uptime |
+| `/stats` | GET | API key | Dashboard counts and alert total |
+| `/conversations` | GET | API key | Recent conversations with previews |
+| `/conversations/:id` | GET | API key | Conversation messages |
+| `/conversations/:id` | DELETE | API key | Delete a conversation |
+| `/agent/chat` | POST | API key | Chat with Aya |
 
-```typescript
-// Request
+### Request/response
+
+```ts
+// POST /agent/chat
 { message: string; conversationId?: string }
 
 // Response
 { conversationId: string; content: string }
 ```
 
-## Frontend Pages
+Validation rules: `message` is trimmed, non-empty, and at most 10,000 characters. Invalid bodies
+return HTTP 400. Unknown conversation IDs return HTTP 404.
+
+### Authentication
+
+- Send `x-api-key: <key>` or `Authorization: Bearer <key>`.
+- `API_KEY` is required when `NODE_ENV=production`; startup fails otherwise.
+- In development, a missing `API_KEY` disables auth with a startup warning.
+- `/` and `/health` are public.
+- `/agent/chat` is rate limited to 20 requests per minute per client by default.
+
+### Error handling
+
+Provider errors are mapped to safe messages:
+
+| Provider status | API response |
+|-----------------|--------------|
+| 401/403 | 502 — check `LLM_API_KEY` |
+| 404 | 502 — check `LLM_MODEL` and `LLM_BASE_URL` |
+| 429 | 429 — rate limit reached |
+| Timeout | 504 — request timed out |
+| Network failure | 502 — provider unreachable |
+
+## Frontend pages
 
 | Route | Description |
-|------|-------------|
-| `/` | Dashboard with stats + chat |
+|-------|-------------|
+| `/` | Dashboard with live stats, quick actions, and embedded chat |
 | `/chat` | Dedicated chat interface |
+| `/api/aya/[...path]` | Server-side proxy that attaches `AYA_API_KEY` |
 
-## Environment Variables
+The sidebar shows navigation, capability shortcuts, and recent conversation history. Chat state is
+shared through `ChatProvider`, so starting a chat from the dashboard or sidebar stays consistent
+across pages. The active conversation is remembered in `localStorage`.
 
-### API (apps/api/.env)
+## Environment variables
 
-```env
-DATABASE_URL=postgresql://user:pass@localhost:5432/aya
-LLM_API_KEY=sk-...
-LLM_BASE_URL=https://opencode.ai/zen/v1
-LLM_MODEL=minimax-m2.5-free
-```
-
-### Web (apps/web/.env)
+### API — `apps/api/.env`
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:3001
+DATABASE_URL="file:./dev.db"
+LLM_PROVIDER="opencode-zen"
+LLM_API_KEY="sk-..."
+LLM_BASE_URL="https://opencode.ai/zen/v1"
+LLM_MODEL="minimax-m2.5-free"
+LLM_TIMEOUT_MS="60000"
+LLM_MAX_RETRIES="2"
+LLM_MAX_TOKENS="4096"
+API_PORT="3001"
+API_KEY="long-random-string"
+CORS_ORIGINS="http://localhost:3000"
 ```
 
-## Database Schema
+### Web — `apps/web/.env`
 
-### Models
+```env
+AYA_API_URL="http://localhost:3001"
+AYA_API_KEY="same-value-as-apps/api/.env"
+```
 
-- **Developer** — name, email, role, seniority, skills, bench status
-- **Client** — name, industry, projects
-- **Assignment** — developer, client, project, start/end dates
-- **Contract** — developer, client, terms, renewal date
-- **Conversation** — chat history
-- **Message** — conversation messages with role
+These values are server-only and must not use the `NEXT_PUBLIC_` prefix.
 
-## Development Workflow
+## Database schema
+
+SQLite via Prisma. Migrations live in `packages/db/prisma/migrations`.
+
+- **Developer** — name, email, role, seniority, bench status, skills
+- **Skill** — name, level, years of experience (unique per developer)
+- **Client** — name, industry, contacts
+- **Contact** — name, role, email, phone
+- **Assignment** — developer, client, project, status, start/end dates
+- **Contract** — developer, client, billing rate, status, start/end dates
+- **Performance** — period, velocity, PR merge time, code quality, client rating (unique per
+  developer and period)
+- **Conversation** — title, messages, timestamps
+- **Message** — role, content, optional tool-call JSON and tool-call ID
+
+Indexes cover common filters: developer name/seniority/bench, skill name, client industry,
+assignment and contract status/end dates, performance period, and conversation/message ordering.
+
+## Seed data
+
+The seed script is date-relative so demos stay fresh:
+
+- 6 clients across fintech, retail, real estate, banking, and logistics
+- 12 developers with 50 skills
+- 11 active assignments
+- 11 contracts (active, renewing, and expired examples)
+- 11 performance records for the current quarter
+- 1 developer on the bench for 45 days
+- Contracts expiring in 5, 10, and 25 days, plus an expired contract
+
+Business data resets on each seed. Conversations are preserved unless
+`SEED_RESET_CONVERSATIONS=true`. Production seeding requires `SEED_FORCE=true`.
+
+## Development workflow
 
 ```bash
-# Install
 bun install
-
-# Generate Prisma
-cd packages/db && bunx prisma generate
-
-# Build
-bun run build
-
-# Development
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
+bun run db:push
+bun run db:seed
 bun run dev
 ```
 
-## Success Criteria
+Quality gates:
 
-- [ ] Agents can query developer roster naturally
-- [ ] Developers matched to projects by skill
-- [ ] Utilization tracked in real-time
-- [ ] Contracts monitored for renewals
-- [ ] Risks flagged proactively
-- [ ] Multi-turn conversations supported
+```bash
+bun run lint
+bun run typecheck
+bun run test
+bun run test:e2e
+bun run build
+```
+
+CI runs the same checks on Node.js 20 with Bun 1.3.
+
+## Success criteria
+
+- [x] Agents can query the developer roster naturally
+- [x] Developers matched to projects by skill
+- [x] Utilization tracked from live data
+- [x] Contracts monitored for renewals
+- [x] Risks flagged proactively
+- [x] Multi-turn conversations supported
+- [x] API key kept out of browser code
+- [x] Production build works on Node.js 20
