@@ -17,6 +17,9 @@ packages/
 
 The browser never talks to the API directly. Requests go through the Next.js route handler at
 `/api/aya/[...path]`, which attaches the API key server-side. The key is not exposed to the client.
+The proxy only exposes known API routes, rejects cross-origin state changes, requires JSON for chat,
+and enforces a bounded request body. A production deployment should additionally place the web app
+behind an identity-aware gateway or add application-level user authentication.
 
 ## Agent capabilities
 
@@ -41,12 +44,12 @@ arguments are validated with Zod, and multi-turn conversation history is persist
 - **LLM**: OpenAI-compatible API (OpenCode Zen by default; OpenAI and OpenRouter supported)
 - **Auth**: API key (`x-api-key` or Bearer) enforced by the API and attached by the web proxy
 - **Code quality**: Biome (linting + formatting), Jest (unit + e2e), GitHub Actions CI
-- **Package manager**: Bun 1.3
+- **Package manager**: Bun 1.4
 - **Monorepo**: Turborepo
 
 ## Quick start
 
-Requires Node.js 20+ and Bun 1.3+.
+Requires Node.js 20.9+ and Bun 1.4+.
 
 ```bash
 # 1. Install dependencies (also generates the Prisma client)
@@ -90,14 +93,15 @@ LLM_MODEL="minimax-m2.5-free"
 LLM_TIMEOUT_MS="60000"
 LLM_MAX_RETRIES="2"
 LLM_MAX_TOKENS="4096"
+AGENT_TIMEOUT_MS="180000"
 
 API_PORT="3001"
 API_KEY="change-me-to-a-long-random-string"
 CORS_ORIGINS="http://localhost:3000"
 ```
 
-`API_KEY` is required when `NODE_ENV=production`; the API refuses to start without it. In local
-development a missing key disables authentication and logs a warning.
+`API_KEY` is required in every environment; the API refuses to start without it. The web proxy
+must use the same value in `AYA_API_KEY`.
 
 ### Web — `apps/web/.env`
 
@@ -105,6 +109,8 @@ development a missing key disables authentication and logs a warning.
 # Server-only. Do not prefix with NEXT_PUBLIC_.
 AYA_API_URL="http://localhost:3001"
 AYA_API_KEY="same-value-as-apps/api/.env"
+# Optional additional origins for reverse-proxy/custom deployments.
+AYA_ALLOWED_ORIGINS=""
 ```
 
 ## API endpoints
@@ -112,7 +118,8 @@ AYA_API_KEY="same-value-as-apps/api/.env"
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/` | GET | Public | Service greeting (`Hello World!`) |
-| `/health` | GET | Public | Health check |
+| `/health` | GET | Public | Process liveness check |
+| `/ready` | GET | Public | Database readiness check |
 | `/stats` | GET | API key | Dashboard statistics and alert count |
 | `/conversations` | GET | API key | Recent conversations with previews |
 | `/conversations/:id` | GET | API key | Conversation messages |
@@ -128,24 +135,30 @@ AYA_API_KEY="same-value-as-apps/api/.env"
 ```
 
 Send the key as `x-api-key: <key>` or `Authorization: Bearer <key>`. The `/agent/chat` route is
-rate limited (20 requests/minute per client by default).
+rate limited to 20 requests/minute per API client IP by default. When requests pass through the web
+proxy, users share the proxy's IP; use an identity-aware gateway or edge limiter for per-user quotas.
+
+Conversation history is bounded and paginated with `?limit=100&before=<message-id>`.
 
 ## Scripts
 
 ```bash
 bun run dev                 # Start all apps in dev mode
 bun run build               # Production build
+bun run audit               # Audit production dependencies
+bun run audit:all           # Audit all dependencies, including tooling
 bun run lint                # Check with Biome
 bun run lint:fix            # Auto-fix with Biome
 bun run format              # Format with Biome
 bun run typecheck           # TypeScript type checking
-bun run test                # Unit tests
-bun run test:e2e            # API end-to-end tests
+bun run test                # Unit and web proxy tests
+bun run test:e2e            # API end-to-end and integration tests
 
 bun run db:generate         # Generate the Prisma client
 bun run db:push             # Push the schema to SQLite
 bun run db:migrate          # Create a migration (development)
 bun run db:migrate:deploy   # Apply committed migrations
+bun run db:drift            # Verify migrations match the Prisma schema
 bun run db:seed             # Seed demo data
 bun run db:studio           # Open Prisma Studio
 ```
@@ -160,8 +173,13 @@ Production seeding requires `SEED_FORCE=true`.
 ## Production notes
 
 - Set `NODE_ENV=production` and a strong `API_KEY`.
-- Set `CORS_ORIGINS` to the deployed web origin(s).
+- Put the web app behind an identity-aware gateway, or implement user sessions, before exposing it
+  publicly. The server-side proxy intentionally does not turn its API key into a user identity.
+- Set `CORS_ORIGINS` to the deployed web origin(s), and set `AYA_ALLOWED_ORIGINS` when a reverse
+  proxy changes the browser-visible origin.
 - Apply migrations with `bun run db:migrate:deploy` before starting the API.
 - Build `@workspace/db` before starting the API: `bun run build` does this through Turborepo.
   The package's compiled output in `packages/db/dist` works on Node.js 20.
 - The web app reads `AYA_API_URL`/`AYA_API_KEY` at request time in the server-side proxy.
+- SQLite is suitable for a single API instance. Move to Postgres before scaling the API
+  horizontally or running multiple replicas.

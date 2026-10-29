@@ -28,7 +28,7 @@ bun run dev
 
 # production
 bun run build
-node dist/main.js
+bun run --cwd apps/api start
 ```
 
 The API listens on `API_PORT` (default `3001`).
@@ -45,8 +45,9 @@ The API listens on `API_PORT` (default `3001`).
 | `LLM_TIMEOUT_MS` | No | Request timeout (default 60000) |
 | `LLM_MAX_RETRIES` | No | Retry count for 429/5xx/network errors (default 2) |
 | `LLM_MAX_TOKENS` | No | Maximum response tokens (default 4096) |
+| `AGENT_TIMEOUT_MS` | No | Total deadline for one agent turn (default 180000) |
 | `API_PORT` | No | HTTP port (default 3001) |
-| `API_KEY` | Production | Shared key for `x-api-key`/Bearer auth |
+| `API_KEY` | Yes | Shared key for `x-api-key`/Bearer auth |
 | `CORS_ORIGINS` | No | Comma-separated origin allowlist |
 
 Relative SQLite paths resolve from `packages/db/prisma`.
@@ -56,7 +57,8 @@ Relative SQLite paths resolve from `packages/db/prisma`.
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/` | GET | Public | `Hello World!` |
-| `/health` | GET | Public | Service status and uptime |
+| `/health` | GET | Public | Service liveness and uptime |
+| `/ready` | GET | Public | Database readiness |
 | `/stats` | GET | API key | Dashboard counts, utilization, alert total |
 | `/conversations` | GET | API key | Recent conversations with previews |
 | `/conversations/:id` | GET | API key | Conversation messages |
@@ -91,12 +93,13 @@ only user/assistant messages are replayed as model context.
 
 ```bash
 bun run test
-DATABASE_URL="file:./test-e2e.db" bun run --cwd packages/db push
 bun run test:e2e
 ```
 
-Unit tests cover the root controller. E2E tests cover the public routes, invalid chat bodies, and
-route setup. No real LLM calls are made.
+`bun run test:e2e` applies the committed migrations before starting the API tests. Unit tests cover
+shared staffing rules, canonical skill matching, tool schemas, and provider-request cancellation.
+E2E tests cover public routes, authentication, request validation, a mocked agent tool-call loop,
+bounded conversation pagination, and database-backed tool behavior. No real LLM calls are made.
 
 ## Security
 

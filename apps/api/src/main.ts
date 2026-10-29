@@ -77,10 +77,7 @@ async function bootstrap() {
 
   const configuredApiKey = process.env.API_KEY?.trim();
   if (!configuredApiKey) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('API_KEY must be configured in production.');
-    }
-    logger.warn('API_KEY is not configured. API authentication is disabled for local development.');
+    throw new Error('API_KEY must be configured before the API can start.');
   }
 
   const port = Number(process.env.API_PORT ?? 3001);

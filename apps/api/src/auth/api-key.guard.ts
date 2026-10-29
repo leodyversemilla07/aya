@@ -37,13 +37,12 @@ export class ApiKeyGuard implements CanActivate {
     if (isPublic) return true;
 
     const configuredKey = process.env.API_KEY?.trim();
+    const request = context.switchToHttp().getRequest<Request>();
     if (!configuredKey) {
-      // Local development convenience. Production startup refuses to run
-      // without API_KEY (see main.ts).
-      return true;
+      this.logger.error('API_KEY is not configured; rejecting a protected request.');
+      throw new UnauthorizedException('A valid x-api-key header is required.');
     }
 
-    const request = context.switchToHttp().getRequest<Request>();
     const providedKey =
       request.header('x-api-key')?.trim() ||
       request

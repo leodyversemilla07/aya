@@ -25,8 +25,8 @@ natural language conversation.
 | ORM | Prisma | 6 |
 | UI | shadcn/ui, Tailwind CSS | latest |
 | LLM | OpenAI-compatible API | — |
-| Validation | Zod | 3 |
-| Package manager | Bun | 1.3 |
+| Validation | Zod | 4 |
+| Package manager | Bun | 1.4 |
 | Monorepo | Turborepo | 2 |
 | Lint/format | Biome | 1.9 |
 
@@ -58,7 +58,7 @@ packages/
 ### Core functionality
 
 1. **Developer roster search**
-   - Query by skills (case-insensitive, partial matches), availability, seniority, client
+   - Query by canonical skills (all listed skills must match), availability, seniority, client
    - Bench and assignment status included in results
 
 2. **Talent matching**
@@ -79,7 +79,7 @@ packages/
 
 6. **Risk alerts**
    - Bench time over 14 days
-   - Contracts expiring within 30 days or already expired
+   - Contracts expiring within 30 days or expired within the previous 30 days
    - Performance concerns (code quality, merge time, client rating)
 
 ### Agent loop
@@ -88,9 +88,11 @@ packages/
 User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Query → Formatted Response
 ```
 
-- Tool iterations are capped; if the cap is reached, the agent is asked for a final answer using
-  the results already gathered.
-- Conversation history is limited to the most recent 20 user/assistant messages.
+- Tool iterations and total provider completions are capped; if the cap is reached, the agent is
+  asked for a final answer using the results already gathered.
+- Each agent turn has a total deadline and is cancelled when the client disconnects.
+- Conversation history is limited to the most recent 20 user/assistant messages and 40,000
+  characters.
 - Tool calls and results are persisted for auditability; only user/assistant messages are replayed
   to the model.
 - The system prompt includes today's date so expiry reasoning is deterministic.
@@ -100,7 +102,8 @@ User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Qu
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/` | GET | Public | Service greeting |
-| `/health` | GET | Public | Health check with uptime |
+| `/health` | GET | Public | Process liveness check with uptime |
+| `/ready` | GET | Public | Database readiness check |
 | `/stats` | GET | API key | Dashboard counts and alert total |
 | `/conversations` | GET | API key | Recent conversations with previews |
 | `/conversations/:id` | GET | API key | Conversation messages |
@@ -118,15 +121,18 @@ User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Qu
 ```
 
 Validation rules: `message` is trimmed, non-empty, and at most 10,000 characters. Invalid bodies
-return HTTP 400. Unknown conversation IDs return HTTP 404.
+return HTTP 400. Unknown conversation IDs return HTTP 404. Conversation history is bounded and
+supports cursor pagination with `limit` and `before` query parameters.
 
 ### Authentication
 
 - Send `x-api-key: <key>` or `Authorization: Bearer <key>`.
-- `API_KEY` is required when `NODE_ENV=production`; startup fails otherwise.
-- In development, a missing `API_KEY` disables auth with a startup warning.
-- `/` and `/health` are public.
-- `/agent/chat` is rate limited to 20 requests per minute per client by default.
+- `API_KEY` is required in every environment; startup fails otherwise.
+- A missing or invalid key is rejected even in development and test environments.
+- `/`, `/health`, and `/ready` are public.
+- `/agent/chat` is rate limited to 20 requests per minute per API client IP by default.
+- The web proxy allowlists API routes, rejects cross-origin state changes, requires JSON for chat,
+  and enforces a bounded request body.
 
 ### Error handling
 
@@ -165,6 +171,7 @@ LLM_MODEL="minimax-m2.5-free"
 LLM_TIMEOUT_MS="60000"
 LLM_MAX_RETRIES="2"
 LLM_MAX_TOKENS="4096"
+AGENT_TIMEOUT_MS="180000"
 API_PORT="3001"
 API_KEY="long-random-string"
 CORS_ORIGINS="http://localhost:3000"
@@ -175,9 +182,11 @@ CORS_ORIGINS="http://localhost:3000"
 ```env
 AYA_API_URL="http://localhost:3001"
 AYA_API_KEY="same-value-as-apps/api/.env"
+AYA_ALLOWED_ORIGINS=""
 ```
 
-These values are server-only and must not use the `NEXT_PUBLIC_` prefix.
+These values are server-only and must not use the `NEXT_PUBLIC_` prefix. A production deployment
+must also provide user authentication or an identity-aware gateway in front of the web proxy.
 
 ## Database schema
 
@@ -226,14 +235,16 @@ bun run dev
 Quality gates:
 
 ```bash
+bun run audit
 bun run lint
 bun run typecheck
 bun run test
 bun run test:e2e
+bun run db:drift
 bun run build
 ```
 
-CI runs the same checks on Node.js 20 with Bun 1.3.
+CI runs the same checks on Node.js 20 with Bun 1.4.
 
 ## Success criteria
 

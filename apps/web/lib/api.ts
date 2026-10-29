@@ -9,17 +9,22 @@ export function getApiUrl(path: string): string {
 }
 
 export function getApiHeaders(init?: HeadersInit): Headers {
-  const headers = new Headers(init);
+  const incoming = new Headers(init);
+  const headers = new Headers({ accept: 'application/json' });
+
+  // Build a minimal upstream header set instead of relaying arbitrary browser
+  // headers (for example, spoofed forwarding or tracing headers).
+  const contentType = incoming.get('content-type');
+  if (contentType) {
+    headers.set('content-type', contentType);
+  }
 
   // The proxy is the only component allowed to supply the API key. Never
   // forward a browser-provided key, even when AYA_API_KEY is unset.
-  headers.delete('x-api-key');
-
   const apiKey = process.env.AYA_API_KEY?.trim();
   if (apiKey) {
     headers.set('x-api-key', apiKey);
   }
 
-  headers.set('accept', 'application/json');
   return headers;
 }

@@ -1,5 +1,15 @@
-import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { AgentService } from './agent.service';
 
@@ -19,7 +29,11 @@ export class AgentController {
   @Post('chat')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  async chat(@Body() body: unknown) {
+  async chat(
+    @Body() body: unknown,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
     const parsed = chatRequestSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException({
@@ -28,6 +42,20 @@ export class AgentController {
       });
     }
 
-    return this.agentService.chat(parsed.data.message, parsed.data.conversationId);
+    const abortController = new AbortController();
+    const abort = () => abortController.abort();
+    request.on('aborted', abort);
+    response.on('close', abort);
+
+    try {
+      return await this.agentService.chat(
+        parsed.data.message,
+        parsed.data.conversationId,
+        abortController.signal,
+      );
+    } finally {
+      request.off('aborted', abort);
+      response.off('close', abort);
+    }
   }
 }

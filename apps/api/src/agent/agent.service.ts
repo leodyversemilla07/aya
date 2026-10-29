@@ -3,8 +3,14 @@ import { prisma } from '@workspace/db';
 import { type LlmMessage, LlmService } from '../llm/llm.service';
 import { executeTool, tools } from './tools';
 
-const MAX_ITERATIONS = 5;
+const MAX_ITERATIONS = 4;
+const MAX_COMPLETIONS = MAX_ITERATIONS + 2;
 const HISTORY_LIMIT = 20;
+const HISTORY_MAX_CHARS = 40_000;
+const AGENT_TIMEOUT_MS = Math.min(
+  10 * 60_000,
+  Math.max(5_000, Number(process.env.AGENT_TIMEOUT_MS ?? 180_000) || 180_000),
+);
 
 function buildSystemPrompt(): string {
   const today = new Date().toISOString().slice(0, 10);
@@ -39,12 +45,9 @@ export class AgentService {
 
   constructor(private readonly llmService: LlmService) {}
 
-  async chat(message: string, conversationId?: string) {
+  async chat(message: string, conversationId?: string, clientSignal?: AbortSignal) {
     let conversation = conversationId
-      ? await prisma.conversation.findUnique({
-          where: { id: conversationId },
-          include: { messages: { orderBy: { createdAt: 'asc' } } },
-        })
+      ? await prisma.conversation.findUnique({ where: { id: conversationId } })
       : null;
 
     if (conversationId && !conversation) {
@@ -54,24 +57,36 @@ export class AgentService {
     if (!conversation) {
       conversation = await prisma.conversation.create({
         data: { title: message.slice(0, 80) },
-        include: { messages: true },
       });
     }
 
-    // Only user/assistant messages are sent back to the model. Tool traffic is
-    // only needed within a single turn, and old tool-call groups can become
-    // invalid when history is truncated.
-    const history: LlmMessage[] = conversation.messages
-      .filter(
-        (storedMessage) =>
-          storedMessage.role === 'user' ||
-          (storedMessage.role === 'assistant' && storedMessage.content.trim().length > 0),
-      )
-      .slice(-HISTORY_LIMIT)
-      .map((storedMessage) => ({
-        role: storedMessage.role as 'user' | 'assistant',
-        content: storedMessage.content,
-      }));
+    // Only user/assistant messages are sent back to the model. Query just the
+    // bounded history needed for the model instead of loading every stored
+    // tool message first.
+    const storedHistory = await prisma.message.findMany({
+      where: {
+        conversationId: conversation.id,
+        role: { in: ['user', 'assistant'] },
+        content: { not: '' },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: HISTORY_LIMIT,
+      select: { role: true, content: true },
+    });
+    const historyMessages: typeof storedHistory = [];
+    let historyChars = 0;
+    for (const storedMessage of storedHistory) {
+      const content = storedMessage.content.trim();
+      if (content.length === 0 || historyChars + content.length > HISTORY_MAX_CHARS) {
+        continue;
+      }
+      historyChars += content.length;
+      historyMessages.unshift(storedMessage);
+    }
+    const history: LlmMessage[] = historyMessages.map((storedMessage) => ({
+      role: storedMessage.role as 'user' | 'assistant',
+      content: storedMessage.content,
+    }));
 
     const messages: LlmMessage[] = [
       { role: 'system', content: buildSystemPrompt() },
@@ -87,11 +102,16 @@ export class AgentService {
       },
     });
 
-    const pendingMessages: PendingMessage[] = [];
-    let response = await this.llmService.chat(messages, tools);
-    let iterations = 0;
+    const deadlineSignal = AbortSignal.timeout(AGENT_TIMEOUT_MS);
+    const requestSignal = clientSignal
+      ? AbortSignal.any([clientSignal, deadlineSignal])
+      : deadlineSignal;
 
-    while (response.toolCalls.length > 0 && iterations < MAX_ITERATIONS) {
+    const pendingMessages: PendingMessage[] = [];
+    let completionCount = 1;
+    let response = await this.llmService.chat(messages, tools, requestSignal);
+
+    while (response.toolCalls.length > 0 && completionCount < MAX_COMPLETIONS - 1) {
       const toolResults = await Promise.all(
         response.toolCalls.map(async (toolCall) => ({
           role: 'tool' as const,
@@ -120,8 +140,8 @@ export class AgentService {
       });
       messages.push(...toolResults);
 
-      response = await this.llmService.chat(messages, tools);
-      iterations++;
+      response = await this.llmService.chat(messages, tools, requestSignal);
+      completionCount++;
     }
 
     if (response.toolCalls.length > 0) {
@@ -134,7 +154,7 @@ export class AgentService {
           'Please provide your final answer using the tool results already gathered. Do not call any more tools.',
       });
 
-      const finalResponse = await this.llmService.chat(messages);
+      const finalResponse = await this.llmService.chat(messages, undefined, requestSignal);
       response = {
         content:
           finalResponse.content.trim() ||

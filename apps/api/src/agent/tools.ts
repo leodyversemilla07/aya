@@ -1,22 +1,19 @@
 import { type Prisma, prisma } from '@workspace/db';
 import { z } from 'zod';
+import {
+  OCCUPIED_ASSIGNMENT_STATUSES,
+  addDays,
+  daysBetween,
+  isOccupiedAssignment,
+  occupiedAssignmentWhere,
+  startOfToday,
+} from '../domain/staffing';
+import { canonicalizeSkillName, skillNamesMatch } from './skills';
 
 // ─── Helpers ──────────────────────────────────────────
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 function normalize(value: string): string {
   return value.trim().toLowerCase();
-}
-
-function startOfToday(): Date {
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  return today;
-}
-
-function addDays(date: Date, days: number): Date {
-  return new Date(date.getTime() + days * DAY_MS);
 }
 
 function parseDate(value: string, field: string): Date {
@@ -27,10 +24,6 @@ function parseDate(value: string, field: string): Date {
     throw new Error(`${field} must be a valid date in YYYY-MM-DD format.`);
   }
   return date;
-}
-
-function daysBetween(from: Date, to: Date): number {
-  return Math.ceil((to.getTime() - from.getTime()) / DAY_MS);
 }
 
 async function resolveClientId(args: {
@@ -47,13 +40,35 @@ async function resolveClientId(args: {
   }
 
   if (args.clientName) {
-    const client = await prisma.client.findFirst({
+    const requestedName = normalize(args.clientName);
+    const candidates = await prisma.client.findMany({
       where: { name: { contains: args.clientName } },
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     });
-    if (!client) throw new Error(`No client matched "${args.clientName}".`);
-    return client.id;
+
+    if (candidates.length === 0) {
+      throw new Error(`No client matched "${args.clientName}".`);
+    }
+
+    const exactMatches = candidates.filter((client) => normalize(client.name) === requestedName);
+    if (exactMatches.length === 1) {
+      return exactMatches[0]?.id;
+    }
+    if (exactMatches.length > 1) {
+      throw new Error(
+        `Multiple clients matched "${args.clientName}". Use the exact client name or ID.`,
+      );
+    }
+    if (candidates.length === 1) {
+      return candidates[0]?.id;
+    }
+
+    throw new Error(
+      `Multiple clients matched "${args.clientName}": ${candidates
+        .map((client) => client.name)
+        .join(', ')}. Use the exact client name or ID.`,
+    );
   }
 
   return undefined;
@@ -61,49 +76,57 @@ async function resolveClientId(args: {
 
 // ─── Tool Schemas ─────────────────────────────────────
 
-const schemas = {
+export const schemas = {
   query_roster: z.object({
-    skills: z.array(z.string().trim().min(1)).optional().describe('Filter by skill names'),
+    skills: z
+      .array(z.string().trim().min(1))
+      .max(20)
+      .nullish()
+      .describe('Filter by skill names; all listed skills must match'),
     availableAfter: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
-      .optional()
+      .nullish()
       .describe('Available after this date (YYYY-MM-DD)'),
     seniority: z
       .enum(['junior', 'mid', 'senior', 'lead'])
-      .optional()
+      .nullish()
       .describe('Filter by seniority: junior, mid, senior, lead'),
-    currentClient: z.string().trim().min(1).optional().describe('Filter by current client name'),
-    clientId: z.string().trim().min(1).optional().describe('Filter by current client ID'),
+    currentClient: z.string().trim().min(1).nullish().describe('Filter by current client name'),
+    clientId: z.string().trim().min(1).nullish().describe('Filter by current client ID'),
     onBench: z
       .boolean()
-      .optional()
+      .nullish()
       .describe('True = only developers without an active assignment, false = only assigned'),
   }),
   match_developers: z.object({
-    requiredSkills: z.array(z.string().trim().min(1)).min(1).describe('Required skill names'),
+    requiredSkills: z
+      .array(z.string().trim().min(1))
+      .min(1)
+      .max(20)
+      .describe('Required skill names; all listed skills must match'),
     seniority: z
       .enum(['junior', 'mid', 'senior', 'lead'])
-      .optional()
+      .nullish()
       .describe('Preferred seniority'),
     startDate: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
       .describe('When the project starts (YYYY-MM-DD)'),
-    teamSize: z.number().int().min(1).max(20).default(1).describe('How many developers are needed'),
+    teamSize: z.number().int().min(1).max(20).nullish().describe('How many developers are needed'),
     industry: z
       .string()
       .trim()
       .min(1)
-      .optional()
+      .nullish()
       .describe('Prefer developers with experience in this industry'),
   }),
   get_utilization: z.object({
-    clientId: z.string().trim().min(1).optional().describe('Filter by specific client ID'),
-    clientName: z.string().trim().min(1).optional().describe('Filter by specific client name'),
+    clientId: z.string().trim().min(1).nullish().describe('Filter by specific client ID'),
+    clientName: z.string().trim().min(1).nullish().describe('Filter by specific client name'),
     seniority: z
       .enum(['junior', 'mid', 'senior', 'lead'])
-      .optional()
+      .nullish()
       .describe('Filter by seniority'),
   }),
   check_contracts: z.object({
@@ -112,23 +135,23 @@ const schemas = {
       .int()
       .min(0)
       .max(365)
-      .optional()
+      .nullish()
       .describe('Show contracts expiring within N days'),
-    clientId: z.string().trim().min(1).optional().describe('Filter by client ID'),
-    clientName: z.string().trim().min(1).optional().describe('Filter by client name'),
+    clientId: z.string().trim().min(1).nullish().describe('Filter by client ID'),
+    clientName: z.string().trim().min(1).nullish().describe('Filter by client name'),
     status: z
       .enum(['active', 'renewing', 'expired'])
-      .optional()
+      .nullish()
       .describe('Filter by contract status'),
   }),
   get_performance: z.object({
-    developerId: z.string().trim().min(1).optional().describe('Specific developer ID'),
-    clientId: z.string().trim().min(1).optional().describe('All developers at a client ID'),
-    clientName: z.string().trim().min(1).optional().describe('All developers at a client name'),
-    period: z.string().trim().min(1).optional().describe("Period like '2026-Q1'"),
+    developerId: z.string().trim().min(1).nullish().describe('Specific developer ID'),
+    clientId: z.string().trim().min(1).nullish().describe('All developers at a client ID'),
+    clientName: z.string().trim().min(1).nullish().describe('All developers at a client name'),
+    period: z.string().trim().min(1).nullish().describe("Period like '2026-Q1'"),
   }),
   get_alerts: z.object({
-    type: z.enum(['all', 'bench', 'contract', 'performance']).default('all'),
+    type: z.enum(['all', 'bench', 'contract', 'performance']).nullish(),
   }),
 } as const;
 
@@ -178,22 +201,11 @@ async function queryRosterHandler(args: z.infer<typeof schemas.query_roster>) {
 
   if (args.seniority) where.seniority = args.seniority;
 
-  if (args.skills?.length) {
-    where.skills = {
-      some: {
-        OR: args.skills.map((skill) => ({ name: { contains: skill } })),
-      },
-    };
-  }
-
-  const activeAssignment: Prisma.AssignmentWhereInput = {
-    status: 'active',
-    OR: [{ endDate: null }, { endDate: { gte: today } }],
-  };
+  const activeAssignment = occupiedAssignmentWhere(today);
 
   const clientId = await resolveClientId({
-    clientId: args.clientId,
-    clientName: args.currentClient,
+    clientId: args.clientId ?? undefined,
+    clientName: args.currentClient ?? undefined,
   });
   if (clientId) {
     and.push({ assignments: { some: { ...activeAssignment, clientId } } });
@@ -207,15 +219,16 @@ async function queryRosterHandler(args: z.infer<typeof schemas.query_roster>) {
 
   if (args.availableAfter) {
     const availableAfter = parseDate(args.availableAfter, 'availableAfter');
+    // A developer is not available after a date if any occupied assignment
+    // starts by that date and continues beyond it.
     and.push({
-      OR: [
-        { assignments: { none: activeAssignment } },
-        {
-          assignments: {
-            some: { status: 'active', endDate: { gte: today, lte: availableAfter } },
-          },
+      assignments: {
+        none: {
+          status: { in: [...OCCUPIED_ASSIGNMENT_STATUSES] },
+          startDate: { lte: availableAfter },
+          OR: [{ endDate: null }, { endDate: { gt: availableAfter } }],
         },
-      ],
+      },
     });
   }
 
@@ -236,10 +249,21 @@ async function queryRosterHandler(args: z.infer<typeof schemas.query_roster>) {
       },
     },
     orderBy: { name: 'asc' },
-    take: 20,
   });
 
-  return developers.map((developer) => {
+  const requiredSkills = [
+    ...new Set((args.skills ?? []).map(canonicalizeSkillName).filter(Boolean)),
+  ];
+  const matchingDevelopers =
+    requiredSkills.length === 0
+      ? developers
+      : developers.filter((developer) =>
+          requiredSkills.every((requiredSkill) =>
+            developer.skills.some((skill) => skillNamesMatch(skill.name, requiredSkill)),
+          ),
+        );
+
+  return matchingDevelopers.slice(0, 20).map((developer) => {
     const assignment = developer.assignments[0];
     return {
       id: developer.id,
@@ -261,7 +285,11 @@ async function queryRosterHandler(args: z.infer<typeof schemas.query_roster>) {
 async function matchDevelopersHandler(args: z.infer<typeof schemas.match_developers>) {
   const today = startOfToday();
   const startDate = parseDate(args.startDate, 'startDate');
-  const requiredSkills = [...new Set(args.requiredSkills.map(normalize).filter(Boolean))];
+  const requiredSkills = [
+    ...new Map(
+      args.requiredSkills.map((skill) => [canonicalizeSkillName(skill), skill.trim()] as const),
+    ),
+  ].filter(([canonical]) => canonical.length > 0);
   const industry = args.industry ? normalize(args.industry) : undefined;
 
   const developers = await prisma.developer.findMany({
@@ -284,18 +312,11 @@ async function matchDevelopersHandler(args: z.infer<typeof schemas.match_develop
     const matchedSkills: string[] = [];
     const missingSkills: string[] = [];
 
-    for (const requiredSkill of requiredSkills) {
-      const match = developer.skills.find((skill) => {
-        const skillName = normalize(skill.name);
-        return (
-          skillName === requiredSkill ||
-          skillName.includes(requiredSkill) ||
-          requiredSkill.includes(skillName)
-        );
-      });
+    for (const [requiredSkill, requiredSkillLabel] of requiredSkills) {
+      const match = developer.skills.find((skill) => skillNamesMatch(skill.name, requiredSkill));
 
       if (!match) {
-        missingSkills.push(requiredSkill);
+        missingSkills.push(requiredSkillLabel);
         continue;
       }
 
@@ -319,11 +340,17 @@ async function matchDevelopersHandler(args: z.infer<typeof schemas.match_develop
       score -= missingSkills.length * 5;
     }
 
-    const activeAssignments = developer.assignments.filter(
+    const activeAssignments = developer.assignments.filter((assignment) =>
+      isOccupiedAssignment(assignment, today),
+    );
+    const assignmentsAtStart = developer.assignments.filter(
       (assignment) =>
-        assignment.status === 'active' && (!assignment.endDate || assignment.endDate >= today),
+        (OCCUPIED_ASSIGNMENT_STATUSES as readonly string[]).includes(assignment.status) &&
+        assignment.startDate <= startDate &&
+        (assignment.endDate === null || assignment.endDate > startDate),
     );
     const currentAssignment = activeAssignments[0];
+    const assignmentAtStart = assignmentsAtStart[0];
     const assignmentEnds = activeAssignments
       .map((assignment) => assignment.endDate)
       .filter((endDate): endDate is Date => endDate !== null);
@@ -337,19 +364,19 @@ async function matchDevelopersHandler(args: z.infer<typeof schemas.match_develop
         (assignment) => assignment.endDate && assignment.endDate <= startDate,
       );
     const onBench = activeAssignments.length === 0;
+    const availableAtStart = assignmentsAtStart.length === 0 && (onBench || endsBeforeStart);
 
-    if (onBench) {
+    if (availableAtStart && onBench) {
       score += 20;
       reasons.push('On bench - available immediately');
-    } else if (endsBeforeStart) {
+    } else if (availableAtStart && endsBeforeStart) {
       score += 15;
       reasons.push(`Current assignment ends ${latestAssignmentEnd?.toISOString().slice(0, 10)}`);
     } else {
       score -= 10;
+      const conflictingAssignment = assignmentAtStart ?? currentAssignment;
       reasons.push(
-        `Currently assigned to ${currentAssignment?.client.name ?? 'a client'} until ${
-          currentAssignment?.endDate?.toISOString().slice(0, 10) ?? 'an unknown date'
-        }`,
+        `Has an assignment at project start (${conflictingAssignment?.client.name ?? 'a client'})`,
       );
     }
 
@@ -391,7 +418,7 @@ async function matchDevelopersHandler(args: z.infer<typeof schemas.match_develop
       matchedSkills,
       missingSkills,
       reasons,
-      available: onBench || Boolean(endsBeforeStart),
+      available: availableAtStart,
       currentClient: currentAssignment?.client.name ?? 'Bench',
       currentAssignmentEnd: currentAssignment?.endDate ?? null,
       benchSince: developer.benchSince,
@@ -399,20 +426,20 @@ async function matchDevelopersHandler(args: z.infer<typeof schemas.match_develop
   });
 
   scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-  const limit = Math.min(Math.max(args.teamSize + 2, 5), 20);
+  const teamSize = args.teamSize ?? 1;
+  const limit = Math.min(Math.max(teamSize + 2, 5), 20);
   return scored.slice(0, limit);
 }
 
 async function getUtilizationHandler(args: z.infer<typeof schemas.get_utilization>) {
   const today = startOfToday();
   const clientId = await resolveClientId({
-    clientId: args.clientId,
-    clientName: args.clientName,
+    clientId: args.clientId ?? undefined,
+    clientName: args.clientName ?? undefined,
   });
 
   const activeAssignment: Prisma.AssignmentWhereInput = {
-    status: 'active',
-    OR: [{ endDate: null }, { endDate: { gte: today } }],
+    ...occupiedAssignmentWhere(today),
     ...(clientId ? { clientId } : {}),
   };
 
@@ -471,12 +498,12 @@ async function checkContractsHandler(args: z.infer<typeof schemas.check_contract
   if (args.status) where.status = args.status;
 
   const clientId = await resolveClientId({
-    clientId: args.clientId,
-    clientName: args.clientName,
+    clientId: args.clientId ?? undefined,
+    clientName: args.clientName ?? undefined,
   });
   if (clientId) where.clientId = clientId;
 
-  if (args.expiringWithin !== undefined) {
+  if (args.expiringWithin !== null && args.expiringWithin !== undefined) {
     if (!where.status) where.status = { in: ['active', 'renewing'] };
     where.endDate = {
       gte: today,
@@ -510,6 +537,7 @@ async function checkContractsHandler(args: z.infer<typeof schemas.check_contract
 }
 
 async function getPerformanceHandler(args: z.infer<typeof schemas.get_performance>) {
+  const today = startOfToday();
   const where: Prisma.PerformanceWhereInput = {};
   const and: Prisma.PerformanceWhereInput[] = [];
 
@@ -517,12 +545,12 @@ async function getPerformanceHandler(args: z.infer<typeof schemas.get_performanc
   if (args.period) and.push({ period: args.period });
 
   const clientId = await resolveClientId({
-    clientId: args.clientId,
-    clientName: args.clientName,
+    clientId: args.clientId ?? undefined,
+    clientName: args.clientName ?? undefined,
   });
   if (clientId) {
     const assignments = await prisma.assignment.findMany({
-      where: { clientId, status: 'active' },
+      where: { ...occupiedAssignmentWhere(today), clientId },
       select: { developerId: true },
     });
     and.push({ developerId: { in: [...new Set(assignments.map((a) => a.developerId))] } });
@@ -560,16 +588,14 @@ type Alert = {
 async function getAlertsHandler(args: z.infer<typeof schemas.get_alerts>) {
   const today = startOfToday();
   const alerts: Alert[] = [];
+  const alertType = args.type ?? 'all';
 
-  if (args.type === 'all' || args.type === 'bench') {
+  if (alertType === 'all' || alertType === 'bench') {
     const benchDevelopers = await prisma.developer.findMany({
       where: {
         benchSince: { not: null },
         assignments: {
-          none: {
-            status: 'active',
-            OR: [{ endDate: null }, { endDate: { gte: today } }],
-          },
+          none: occupiedAssignmentWhere(today),
         },
       },
       orderBy: { benchSince: 'asc' },
@@ -589,11 +615,17 @@ async function getAlertsHandler(args: z.infer<typeof schemas.get_alerts>) {
     }
   }
 
-  if (args.type === 'all' || args.type === 'contract') {
+  if (alertType === 'all' || alertType === 'contract') {
     const contracts = await prisma.contract.findMany({
       where: {
         status: { in: ['active', 'renewing', 'expired'] },
-        endDate: { lte: addDays(today, 30) },
+        startDate: { lte: today },
+        // Keep recently expired contracts actionable without retaining every
+        // historical expiry as a permanent alert.
+        endDate: {
+          gte: addDays(today, -30),
+          lte: addDays(today, 30),
+        },
       },
       include: { developer: true, client: true },
       orderBy: { endDate: 'asc' },
@@ -624,7 +656,7 @@ async function getAlertsHandler(args: z.infer<typeof schemas.get_alerts>) {
     }
   }
 
-  if (args.type === 'all' || args.type === 'performance') {
+  if (alertType === 'all' || alertType === 'performance') {
     const performances = await prisma.performance.findMany({
       include: { developer: true },
       orderBy: { createdAt: 'desc' },

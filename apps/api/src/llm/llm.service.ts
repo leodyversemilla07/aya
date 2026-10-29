@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { Injectable, Logger } from '@nestjs/common';
-import type { ZodTypeAny } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { type ZodTypeAny, toJSONSchema } from 'zod';
 
 export class LlmError extends Error {
   constructor(
@@ -60,6 +60,7 @@ const PROVIDER_DEFAULTS: Record<string, ProviderDefaults> = {
 
 const REQUEST_TIMEOUT_MS = Math.max(1_000, Number(process.env.LLM_TIMEOUT_MS ?? 60_000) || 60_000);
 const MAX_RETRIES = Math.min(5, Math.max(0, Number(process.env.LLM_MAX_RETRIES ?? 2) || 0));
+const MAX_TOOL_CALLS = 8;
 const MAX_TOKENS = (() => {
   const configured = Number(process.env.LLM_MAX_TOKENS ?? 4096);
   return Number.isInteger(configured) && configured > 0 ? configured : 4096;
@@ -95,19 +96,12 @@ function getProviderConfig(): ProviderConfig {
   };
 }
 
-// zod-to-json-schema's generic signature triggers TS2589 ("excessively deep")
-// with ZodTypeAny. The runtime behavior is unaffected, so keep a narrower local
-// signature for our conversion helper.
-const convertToJsonSchema = zodToJsonSchema as unknown as (
-  schema: ZodTypeAny,
-  options: { $refStrategy: 'none'; target: 'openAi' },
-) => Record<string, unknown>;
-
-function toJsonSchema(schema: ZodTypeAny): Record<string, unknown> {
-  return convertToJsonSchema(schema, {
-    $refStrategy: 'none',
-    target: 'openAi',
+export function toJsonSchema(schema: ZodTypeAny): Record<string, unknown> {
+  const { $schema: _schemaMetadata, ...jsonSchema } = toJSONSchema(schema, {
+    target: 'draft-7',
+    io: 'input',
   });
+  return jsonSchema;
 }
 
 function parseToolArguments(raw: unknown): Record<string, unknown> {
@@ -130,10 +124,6 @@ function parseToolArguments(raw: unknown): Record<string, unknown> {
   }
 
   return {};
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isAbortError(error: unknown): boolean {
@@ -165,18 +155,25 @@ function providerErrorMessage(status: number): string {
 export class LlmService {
   private readonly logger = new Logger(LlmService.name);
 
-  async chat(messages: LlmMessage[], tools?: LlmTools): Promise<LlmResponse> {
+  async chat(messages: LlmMessage[], tools?: LlmTools, signal?: AbortSignal): Promise<LlmResponse> {
     const config = getProviderConfig();
     const body = this.buildRequestBody(config, messages, tools);
-    const data = await this.requestCompletion(config, body);
+    const data = await this.requestCompletion(config, body, signal);
 
     const choice = data.choices?.[0];
     if (!choice?.message) {
       throw new LlmError('The LLM provider returned an empty response.', 502);
     }
 
-    const toolCalls: LlmToolCall[] = (choice.message.tool_calls ?? [])
+    const rawToolCalls = choice.message.tool_calls ?? [];
+    if (rawToolCalls.length > MAX_TOOL_CALLS) {
+      this.logger.warn(
+        `LLM response contained ${rawToolCalls.length} tool calls; executing at most ${MAX_TOOL_CALLS}.`,
+      );
+    }
+    const toolCalls: LlmToolCall[] = rawToolCalls
       .filter((toolCall) => typeof toolCall.function?.name === 'string')
+      .slice(0, MAX_TOOL_CALLS)
       .map((toolCall, index) => ({
         id: toolCall.id ?? `call_${randomUUID()}_${index}`,
         name: toolCall.function?.name as string,
@@ -249,6 +246,7 @@ export class LlmService {
   private async requestCompletion(
     config: ProviderConfig,
     body: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<{
     choices?: Array<{
       message?: {
@@ -263,8 +261,11 @@ export class LlmService {
     const url = `${config.baseURL}/chat/completions`;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      const timeoutController = new AbortController();
+      const timeout = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT_MS);
+      const requestSignal = signal
+        ? AbortSignal.any([signal, timeoutController.signal])
+        : timeoutController.signal;
 
       try {
         const response = await fetch(url, {
@@ -274,7 +275,7 @@ export class LlmService {
             Authorization: `Bearer ${config.apiKey}`,
           },
           body: JSON.stringify(body),
-          signal: controller.signal,
+          signal: requestSignal,
         });
 
         if (response.ok) {
@@ -290,7 +291,7 @@ export class LlmService {
 
         const retryable = response.status === 429 || response.status >= 500;
         if (retryable && attempt < MAX_RETRIES) {
-          await sleep(500 * 2 ** attempt);
+          await delay(500 * 2 ** attempt, undefined, { signal });
           continue;
         }
 
@@ -303,7 +304,9 @@ export class LlmService {
 
         if (isAbortError(error)) {
           throw new LlmError(
-            `The LLM request timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)} seconds.`,
+            signal?.aborted
+              ? 'The LLM request was cancelled before it completed.'
+              : `The LLM request timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)} seconds.`,
             504,
           );
         }
@@ -315,7 +318,7 @@ export class LlmService {
         );
 
         if (attempt < MAX_RETRIES) {
-          await sleep(500 * 2 ** attempt);
+          await delay(500 * 2 ** attempt, undefined, { signal });
           continue;
         }
 

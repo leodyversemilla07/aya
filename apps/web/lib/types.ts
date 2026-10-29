@@ -22,6 +22,8 @@ export interface ConversationDetail {
   createdAt: string;
   updatedAt: string;
   messages: ChatMessage[];
+  hasMore?: boolean;
+  nextCursor?: string | null;
 }
 
 export interface DashboardStats {
