@@ -6,6 +6,8 @@ import '@workspace/ui/globals.css';
 import { AppShell } from '@/components/app-shell';
 import { ChatProvider } from '@/components/chat/chat-provider';
 import { ThemeProvider } from '@/components/theme-provider';
+import { TooltipProvider } from '@workspace/ui/components/tooltip';
+import { Providers } from './providers';
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-geist-sans' });
 
@@ -35,11 +37,15 @@ export default function RootLayout({
       className={cn('font-sans antialiased', geist.variable, fontMono.variable)}
     >
       <body className="min-h-svh">
-        <ThemeProvider>
-          <ChatProvider>
-            <AppShell>{children}</AppShell>
-          </ChatProvider>
-        </ThemeProvider>
+        <Providers>
+          <ThemeProvider>
+            <TooltipProvider>
+              <ChatProvider>
+                <AppShell>{children}</AppShell>
+              </ChatProvider>
+            </TooltipProvider>
+          </ThemeProvider>
+        </Providers>
       </body>
     </html>
   );

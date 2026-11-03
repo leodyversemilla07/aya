@@ -1,11 +1,11 @@
 'use client';
 
-import type { DashboardStats } from '@/lib/types';
+import { statsQuery } from '@/lib/queries';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@workspace/ui/components/button';
 import { Card, CardContent } from '@workspace/ui/components/card';
 import { Skeleton } from '@workspace/ui/components/skeleton';
 import { AlertTriangle, Briefcase, Building2, RefreshCw, UserCheck, Users } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
 
 const CARD_STYLES = [
   {
@@ -35,32 +35,9 @@ const CARD_STYLES = [
 ];
 
 export function StatsCards() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: stats, isPending, error, refetch } = useQuery(statsQuery());
 
-  const loadStats = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/aya/stats', { cache: 'no-store' });
-      if (!response.ok) {
-        throw new Error(`Could not load dashboard stats (${response.status}).`);
-      }
-      setStats((await response.json()) as DashboardStats);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Could not load dashboard stats.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadStats();
-  }, [loadStats]);
-
-  if (loading) {
+  if (isPending) {
     return (
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4" aria-label="Loading dashboard stats">
         {[0, 1, 2, 3].map((index) => (
@@ -83,8 +60,10 @@ export function StatsCards() {
       <Card className="border-destructive/30 bg-destructive/5">
         <CardContent className="flex flex-wrap items-center gap-3">
           <AlertTriangle className="h-5 w-5 text-destructive" aria-hidden="true" />
-          <p className="flex-1 text-sm text-destructive">{error ?? 'Stats are unavailable.'}</p>
-          <Button type="button" variant="outline" size="sm" onClick={() => void loadStats()}>
+          <p className="flex-1 text-sm text-destructive">
+            {error instanceof Error ? error.message : 'Stats are unavailable.'}
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void refetch()}>
             <RefreshCw className="h-4 w-4" />
             Retry
           </Button>
