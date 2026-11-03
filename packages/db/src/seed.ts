@@ -1,4 +1,12 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { PrismaClient } from '@prisma/client';
+import dotenv from 'dotenv';
+
+const envPath = [resolve(process.cwd(), '.env'), resolve(process.cwd(), '../../.env')].find(
+  existsSync,
+);
+if (envPath) dotenv.config({ path: envPath });
 
 const prisma = new PrismaClient();
 
