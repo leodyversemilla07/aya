@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { prisma } from '@workspace/db';
+import { getServerEnv } from '@workspace/env';
 import { type LlmMessage, LlmService } from '../llm/llm.service';
 import { executeTool, tools } from './tools';
 
@@ -7,10 +8,7 @@ const MAX_ITERATIONS = 4;
 const MAX_COMPLETIONS = MAX_ITERATIONS + 2;
 const HISTORY_LIMIT = 20;
 const HISTORY_MAX_CHARS = 40_000;
-const AGENT_TIMEOUT_MS = Math.min(
-  10 * 60_000,
-  Math.max(5_000, Number(process.env.AGENT_TIMEOUT_MS ?? 180_000) || 180_000),
-);
+const AGENT_TIMEOUT_MS = Math.min(10 * 60_000, getServerEnv().AGENT_TIMEOUT_MS);
 
 function buildSystemPrompt(): string {
   const today = new Date().toISOString().slice(0, 10);
@@ -45,9 +43,16 @@ export class AgentService {
 
   constructor(private readonly llmService: LlmService) {}
 
-  async chat(message: string, conversationId?: string, clientSignal?: AbortSignal) {
+  async chat(
+    message: string,
+    conversationId?: string,
+    clientSignal?: AbortSignal,
+    userId?: string,
+  ) {
     let conversation = conversationId
-      ? await prisma.conversation.findUnique({ where: { id: conversationId } })
+      ? await prisma.conversation.findFirst({
+          where: { id: conversationId, ...(userId ? { userId } : {}) },
+        })
       : null;
 
     if (conversationId && !conversation) {
@@ -56,7 +61,10 @@ export class AgentService {
 
     if (!conversation) {
       conversation = await prisma.conversation.create({
-        data: { title: message.slice(0, 80) },
+        data: {
+          title: message.slice(0, 80),
+          ...(userId ? { user: { connect: { id: userId } } } : {}),
+        },
       });
     }
 

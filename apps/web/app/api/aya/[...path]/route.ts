@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { getApiHeaders, getApiUrl } from '@/lib/api';
+import { getWebEnv } from '@workspace/env';
 import { type NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -58,10 +59,7 @@ function normalizeOrigin(value: string): string {
 }
 
 function getAllowedOrigins(request: NextRequest): Set<string> {
-  const configuredOrigins = (process.env.AYA_ALLOWED_ORIGINS ?? '')
-    .split(',')
-    .map((origin) => normalizeOrigin(origin))
-    .filter(Boolean);
+  const configuredOrigins = getWebEnv().AYA_ALLOWED_ORIGINS.map(normalizeOrigin);
   const allowedOrigins = new Set([request.nextUrl.origin, ...configuredOrigins]);
   const host = request.headers.get('host');
   if (host) {

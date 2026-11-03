@@ -6,7 +6,8 @@ Aya is an AI-powered staff augmentation management agent:
 
 - **Backend**: NestJS 11 API with Prisma ORM and SQLite
 - **Frontend**: Next.js 16 app with shadcn/ui
-- **LLM integration**: OpenAI-compatible API (OpenCode Zen, OpenAI, OpenRouter)
+- **LLM integration**: Shared `@workspace/ai` package supporting OpenAI-compatible providers,
+  Anthropic, and Google Gemini
 - **Database**: SQLite for local development and the demo deployment
 - **Package manager**: Bun 1.4
 - **Monorepo**: Turborepo
@@ -29,12 +30,11 @@ This installs workspace dependencies and runs `prisma generate` for `@workspace/
 ### 2. Configure environment variables
 
 ```bash
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
+cp .env.example .env
 ```
 
-Set `LLM_API_KEY` in `apps/api/.env`. Generate a shared API key and use the same value in both
-files:
+Set `LLM_API_KEY` in `.env`. Generate a shared API key and use the same value for `API_KEY` and
+`AYA_API_KEY`:
 
 ```bash
 openssl rand -hex 32
@@ -71,11 +71,12 @@ a TypeScript loader.
 
 ## Environment variables
 
-### API — `apps/api/.env`
+### Root — `.env`
 
 ```env
 DATABASE_URL="file:./dev.db"
 
+# openai | openrouter | opencode-zen | anthropic | google | custom
 LLM_PROVIDER="opencode-zen"
 LLM_API_KEY="your-api-key-here"
 LLM_BASE_URL="https://opencode.ai/zen/v1"
@@ -88,36 +89,22 @@ AGENT_TIMEOUT_MS="180000"
 API_PORT="3001"
 API_KEY="change-me-to-a-long-random-string"
 CORS_ORIGINS="http://localhost:3000"
+BETTER_AUTH_SECRET="replace-with-a-random-32-byte-secret"
+BETTER_AUTH_URL="http://localhost:3000"
 ```
 
-- `LLM_PROVIDER`: `openai`, `openrouter`, or `opencode-zen` (default).
+- `LLM_PROVIDER`: `openai`, `openrouter`, `opencode-zen`, `anthropic`, `google`, or `custom`.
 - `LLM_BASE_URL` and `LLM_MODEL` override the provider defaults.
+- Provider factories are available from `@workspace/ai/providers/*` when an application needs
+  more than the environment-selected provider. The API currently uses the environment-selected
+  provider through the shared `Models` registry.
 - `API_KEY` is required in every environment. The API refuses to start without it, and the
   web proxy must use the same value in `AYA_API_KEY`.
 - `CORS_ORIGINS` is a comma-separated allowlist. Use `*` only if you intentionally allow all
   origins.
 
-### Web — `apps/web/.env`
-
-```env
-AYA_API_URL="http://localhost:3001"
-AYA_API_KEY="same-value-as-apps/api/.env"
-AYA_ALLOWED_ORIGINS=""
-```
-
-These are server-only. Never rename them to `NEXT_PUBLIC_*`, or the API key will be bundled into
-client JavaScript. The Next.js proxy at `app/api/aya/[...path]/route.ts` attaches the key.
-`AYA_ALLOWED_ORIGINS` is optional; the current request origin is allowed automatically, while the
-additional list is useful behind a reverse proxy or custom deployment domain.
-
-### Database — `packages/db/.env` (optional)
-
-```env
-DATABASE_URL="file:./dev.db"
-```
-
-Prisma CLI commands load `packages/db/.env` first; the API loads `apps/api/.env`. Keep the
-`DATABASE_URL` values pointing at the same file if you run CLI commands and the API separately.
+The root `.env` is loaded by the API, web proxy, Prisma CLI, and seed process. These values are
+server-only; never rename them to `NEXT_PUBLIC_*`.
 
 ## Project structure
 
@@ -138,6 +125,9 @@ apps/
     components/
       chat/         Shared chat provider, messages, composer, welcome
 packages/
+  auth/             Shared Better Auth configuration and session types
+  env/              Runtime-validated server and web environment configuration
+  ai/               Unified multi-provider LLM client and provider registry
   db/
     prisma/         Schema, migrations, SQLite database
     src/seed.ts     Demo data
@@ -185,12 +175,12 @@ content-type, response-header, and body limits.
 
 ## Authentication and proxy flow
 
-1. The browser calls `/api/aya/<path>` on the Next.js server.
-2. The route handler reads `AYA_API_URL` and `AYA_API_KEY` from the server environment.
-3. It validates the route, request origin, content type, and body size.
-4. It forwards the request to the NestJS API with `x-api-key` attached.
-5. The API validates the key with `ApiKeyGuard` (constant-time comparison).
-6. `/`, `/health`, and `/ready` are marked `@Public()`; all other routes require the key.
+1. The browser signs in through Better Auth at `/api/auth/*`.
+2. Better Auth stores users and sessions in the shared Prisma database.
+3. The browser calls `/api/aya/<path>` on the Next.js server.
+4. The route handler validates the request and forwards the session cookie to NestJS.
+5. The API validates the Better Auth session and scopes conversations to the authenticated user.
+6. API-key authentication remains available for internal clients and automated tests.
 
 ## LLM providers
 
@@ -209,11 +199,11 @@ and timeout failures produce actionable messages.
   `bun run db:migrate:deploy`) and check `DATABASE_URL`.
 - **Database file created in the wrong place**: relative SQLite paths resolve from
   `packages/db/prisma`. Use an absolute path or keep the file there.
-- **401 from the API**: make sure `API_KEY` in `apps/api/.env` matches `AYA_API_KEY` in
-  `apps/web/.env`.
+- **401 from the API**: make sure `API_KEY` in `.env` matches `AYA_API_KEY` in
+  `.env`.
 - **403 from the web proxy**: the state-changing request did not come from an allowed origin. Set
   `AYA_ALLOWED_ORIGINS` to the deployed web origin when a reverse proxy changes the request origin.
-- **`LLM_API_KEY is not configured`**: add a provider key to `apps/api/.env`; the API itself
+- **`LLM_API_KEY is not configured`**: add a provider key to `.env`; the API itself
   starts without it, but chat requests will return 503.
 - **`@workspace/db` fails to load under Node.js**: run `bun run build` so `packages/db/dist`
   exists, and start the API from the repository root or a workspace-aware context.

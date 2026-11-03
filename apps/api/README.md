@@ -9,10 +9,10 @@ From the repository root:
 
 ```bash
 bun install
-cp apps/api/.env.example apps/api/.env
+cp .env.example .env
 ```
 
-Configure `LLM_API_KEY`, `API_KEY`, and (optionally) `DATABASE_URL` in `apps/api/.env`. Then create
+Configure `LLM_API_KEY`, `API_KEY`, and (optionally) `DATABASE_URL` in `.env`. Then create
 and seed the SQLite database:
 
 ```bash

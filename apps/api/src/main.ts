@@ -1,5 +1,3 @@
-import 'dotenv/config';
-
 import {
   type ArgumentsHost,
   Catch,
@@ -9,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { prisma } from '@workspace/db';
+import { getServerEnv } from '@workspace/env';
 import type { Request, Response } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -60,33 +59,24 @@ class AllExceptionsFilter implements ExceptionFilter {
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+  const env = getServerEnv();
   const app = await NestFactory.create(AppModule);
 
   app.use(helmet());
   app.getHttpAdapter().getInstance().disable('x-powered-by');
 
-  const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
   app.enableCors({
-    origin: allowedOrigins.includes('*') ? true : allowedOrigins,
+    origin: env.CORS_ORIGINS.includes('*') ? true : env.CORS_ORIGINS,
   });
 
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  const configuredApiKey = process.env.API_KEY?.trim();
-  if (!configuredApiKey) {
+  if (!env.API_KEY) {
     throw new Error('API_KEY must be configured before the API can start.');
   }
 
-  const port = Number(process.env.API_PORT ?? 3001);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`Invalid API_PORT: ${process.env.API_PORT}`);
-  }
-
-  await app.listen(port);
-  logger.log(`Aya API running on http://localhost:${port}`);
+  await app.listen(env.API_PORT);
+  logger.log(`Aya API running on http://localhost:${env.API_PORT}`);
 
   const shutdown = async (signal: string) => {
     logger.log(`Received ${signal}. Shutting down...`);

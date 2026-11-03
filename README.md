@@ -12,14 +12,17 @@ apps/
   web/    Next.js 16 frontend — dashboard, chat UI, server-side API proxy
 packages/
   db/     Shared Prisma schema, SQLite database, seed data
+  auth/   Shared Better Auth configuration and session handlers
   ui/     shadcn/ui component library
 ```
 
-The browser never talks to the API directly. Requests go through the Next.js route handler at
-`/api/aya/[...path]`, which attaches the API key server-side. The key is not exposed to the client.
+Users sign in through Better Auth at `/sign-in` or `/sign-up`. Sessions are stored in the shared
+Prisma database and held in secure HttpOnly cookies. The browser never talks to the API directly.
+Requests go through the Next.js route handler at `/api/aya/[...path]`, which forwards the session
+cookie and attaches the API key server-side. The key is not exposed to the client.
 The proxy only exposes known API routes, rejects cross-origin state changes, requires JSON for chat,
 and enforces a bounded request body. A production deployment should additionally place the web app
-behind an identity-aware gateway or add application-level user authentication.
+behind an identity-aware gateway for enterprise SSO and per-user rate limiting.
 
 ## Agent capabilities
 
@@ -41,8 +44,9 @@ arguments are validated with Zod, and multi-turn conversation history is persist
 
 - **Backend**: NestJS 11, Prisma 6, SQLite
 - **Frontend**: Next.js 16, React 19, shadcn/ui, react-markdown
-- **LLM**: OpenAI-compatible API (OpenCode Zen by default; OpenAI and OpenRouter supported)
-- **Auth**: API key (`x-api-key` or Bearer) enforced by the API and attached by the web proxy
+- **LLM**: Shared `@workspace/ai` package with OpenAI, OpenRouter, OpenCode Zen, Anthropic,
+  Google Gemini, and custom OpenAI-compatible providers
+- **Auth**: Better Auth email/password sessions, with API-key compatibility for internal clients
 - **Code quality**: Biome (linting + formatting), Jest (unit + e2e), GitHub Actions CI
 - **Package manager**: Bun 1.4
 - **Monorepo**: Turborepo
@@ -56,9 +60,8 @@ Requires Node.js 20.9+ and Bun 1.4+.
 bun install
 
 # 2. Configure environment
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
-# Edit both files: set LLM_API_KEY and a shared API_KEY value.
+cp .env.example .env
+# Set LLM_API_KEY, BETTER_AUTH_SECRET, API_KEY, and matching AYA_API_KEY.
 
 # 3. Create and seed the SQLite database
 bun run db:push
@@ -80,12 +83,12 @@ bun run db:migrate          # create a migration during development
 
 ## Environment variables
 
-### API — `apps/api/.env`
+### Root — `.env`
 
 ```env
 DATABASE_URL="file:./dev.db"
 
-# openai | openrouter | opencode-zen
+# openai | openrouter | opencode-zen | anthropic | google | custom
 LLM_PROVIDER="opencode-zen"
 LLM_API_KEY="your-api-key"
 LLM_BASE_URL="https://opencode.ai/zen/v1"
@@ -98,20 +101,15 @@ AGENT_TIMEOUT_MS="180000"
 API_PORT="3001"
 API_KEY="change-me-to-a-long-random-string"
 CORS_ORIGINS="http://localhost:3000"
+
+# Shared with the web app; generate with `openssl rand -base64 32`.
+BETTER_AUTH_SECRET="replace-with-a-random-32-byte-secret"
+BETTER_AUTH_URL="http://localhost:3000"
 ```
 
 `API_KEY` is required in every environment; the API refuses to start without it. The web proxy
-must use the same value in `AYA_API_KEY`.
-
-### Web — `apps/web/.env`
-
-```env
-# Server-only. Do not prefix with NEXT_PUBLIC_.
-AYA_API_URL="http://localhost:3001"
-AYA_API_KEY="same-value-as-apps/api/.env"
-# Optional additional origins for reverse-proxy/custom deployments.
-AYA_ALLOWED_ORIGINS=""
-```
+must use the same value in `AYA_API_KEY`. The root environment is server-only; never rename these
+variables to `NEXT_PUBLIC_*`.
 
 ## API endpoints
 
@@ -120,11 +118,12 @@ AYA_ALLOWED_ORIGINS=""
 | `/` | GET | Public | Service greeting (`Hello World!`) |
 | `/health` | GET | Public | Process liveness check |
 | `/ready` | GET | Public | Database readiness check |
-| `/stats` | GET | API key | Dashboard statistics and alert count |
-| `/conversations` | GET | API key | Recent conversations with previews |
-| `/conversations/:id` | GET | API key | Conversation messages |
-| `/conversations/:id` | DELETE | API key | Delete a conversation |
-| `/agent/chat` | POST | API key | Chat with Aya |
+| `/api/auth/*` | GET/POST | Public/session | Better Auth sign-in, sign-up, and session endpoints |
+| `/stats` | GET | Session/API key | Dashboard statistics and alert count |
+| `/conversations` | GET | Session/API key | User's recent conversations |
+| `/conversations/:id` | GET | Session/API key | User's conversation messages |
+| `/conversations/:id` | DELETE | Session/API key | Delete a user's conversation |
+| `/agent/chat` | POST | Session/API key | Chat with Aya |
 
 ```ts
 // POST /agent/chat
@@ -173,13 +172,14 @@ Production seeding requires `SEED_FORCE=true`.
 ## Production notes
 
 - Set `NODE_ENV=production` and a strong `API_KEY`.
-- Put the web app behind an identity-aware gateway, or implement user sessions, before exposing it
-  publicly. The server-side proxy intentionally does not turn its API key into a user identity.
+- Put the web app behind an identity-aware gateway for enterprise SSO and per-user rate limiting.
+  Better Auth sessions provide the application-level user identity.
 - Set `CORS_ORIGINS` to the deployed web origin(s), and set `AYA_ALLOWED_ORIGINS` when a reverse
   proxy changes the browser-visible origin.
 - Apply migrations with `bun run db:migrate:deploy` before starting the API.
 - Build `@workspace/db` before starting the API: `bun run build` does this through Turborepo.
   The package's compiled output in `packages/db/dist` works on Node.js 20.
-- The web app reads `AYA_API_URL`/`AYA_API_KEY` at request time in the server-side proxy.
+- The web app reads `AYA_API_URL`/`AYA_API_KEY` and Better Auth settings at request time in the
+  server-side proxy.
 - SQLite is suitable for a single API instance. Move to Postgres before scaling the API
   horizontally or running multiple replicas.
