@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { prisma } from '@workspace/db';
 import { getServerEnv } from '@workspace/env';
 import { type LlmMessage, LlmService } from '../llm/llm.service';
@@ -41,7 +41,7 @@ interface PendingMessage {
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
 
-  constructor(private readonly llmService: LlmService) {}
+  constructor(@Inject(LlmService) private readonly llmService: LlmService) {}
 
   async chat(
     message: string,

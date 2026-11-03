@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import {
   type ArgumentsHost,
   Catch,
@@ -67,6 +68,7 @@ async function bootstrap() {
 
   app.enableCors({
     origin: env.CORS_ORIGINS.includes('*') ? true : env.CORS_ORIGINS,
+    credentials: true,
   });
 
   app.useGlobalFilters(new AllExceptionsFilter());

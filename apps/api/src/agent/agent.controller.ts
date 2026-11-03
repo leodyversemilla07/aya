@@ -4,6 +4,7 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  Inject,
   Post,
   Req,
   Res,
@@ -25,7 +26,7 @@ const chatRequestSchema = z.object({
 
 @Controller('agent')
 export class AgentController {
-  constructor(private readonly agentService: AgentService) {}
+  constructor(@Inject(AgentService) private readonly agentService: AgentService) {}
 
   @Post('chat')
   @HttpCode(HttpStatus.OK)

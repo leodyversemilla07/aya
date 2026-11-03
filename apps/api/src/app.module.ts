@@ -5,6 +5,7 @@ import { AgentModule } from './agent/agent.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ApiKeyGuard } from './auth/api-key.guard';
+import { AuthController } from './auth/auth.controller';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { ApiKeyGuard } from './auth/api-key.guard';
     ]),
     AgentModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, AuthController],
   providers: [
     AppService,
     {

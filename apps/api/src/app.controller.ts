@@ -1,11 +1,20 @@
-import { BadRequestException, Controller, Delete, Get, Param, Query, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { AppService } from './app.service';
 import { Public } from './auth/public.decorator';
 import type { AuthenticatedRequest } from './auth/request';
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) {}
+  constructor(@Inject(AppService) private readonly appService: AppService) {}
 
   @Get()
   @Public()

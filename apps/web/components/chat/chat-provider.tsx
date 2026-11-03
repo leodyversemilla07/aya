@@ -1,11 +1,14 @@
 'use client';
 
+import { getApiUrl } from '@/lib/api';
+import { conversationsQuery, queryKeys } from '@/lib/queries';
 import type {
   ChatMessage,
   ChatResponse,
   ConversationDetail,
   ConversationSummary,
 } from '@/lib/types';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   type ReactNode,
   createContext,
@@ -58,13 +61,13 @@ async function getErrorMessage(response: Response): Promise<string> {
 }
 
 export function ChatProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
+  const conversationsQueryState = useQuery(conversationsQuery());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [conversationsLoading, setConversationsLoading] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
@@ -77,69 +80,65 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const clearError = useCallback(() => setError(null), []);
 
   const refreshConversations = useCallback(async () => {
-    try {
-      const response = await fetch('/api/aya/conversations', { cache: 'no-store' });
-      if (!response.ok) return;
-      const data = (await response.json()) as ConversationSummary[];
-      setConversations(Array.isArray(data) ? data : []);
-    } catch {
-      // The sidebar history is non-critical. Chat errors are surfaced separately.
-    } finally {
-      setConversationsLoading(false);
-    }
-  }, []);
+    await conversationsQueryState.refetch();
+  }, [conversationsQueryState.refetch]);
 
-  const loadConversation = useCallback(async (id: string, options?: { silent?: boolean }) => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    sendingRef.current = false;
-    loadAbortRef.current?.abort();
+  const loadConversation = useCallback(
+    async (id: string, options?: { silent?: boolean }) => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      sendingRef.current = false;
+      loadAbortRef.current?.abort();
 
-    const controller = new AbortController();
-    loadAbortRef.current = controller;
+      const controller = new AbortController();
+      loadAbortRef.current = controller;
 
-    // Loading history is not the assistant "thinking", so keep the typing
-    // indicator tied to sendMessage only.
-    setLoading(false);
-    setHistoryLoading(true);
-    setError(null);
+      // Loading history is not the assistant "thinking", so keep the typing
+      // indicator tied to sendMessage only.
+      setLoading(false);
+      setHistoryLoading(true);
+      setError(null);
 
-    try {
-      const response = await fetch(`/api/aya/conversations/${encodeURIComponent(id)}`, {
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(await getErrorMessage(response));
+      try {
+        const response = await fetch(getApiUrl(`/conversations/${encodeURIComponent(id)}`), {
+          cache: 'no-store',
+          credentials: 'include',
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(await getErrorMessage(response));
+        }
+
+        const data = (await response.json()) as ConversationDetail;
+        queryClient.setQueryData(queryKeys.conversation(data.id), data);
+        setMessages(Array.isArray(data.messages) ? data.messages : []);
+        setConversationId(data.id);
+        conversationIdRef.current = data.id;
+        window.localStorage.setItem(CONVERSATION_STORAGE_KEY, data.id);
+      } catch (loadError) {
+        if (isAbortError(loadError)) return;
+
+        if (!options?.silent) {
+          setError(
+            loadError instanceof Error ? loadError.message : 'Could not load that conversation.',
+          );
+        }
+        setMessages([]);
+        setConversationId(null);
+        conversationIdRef.current = null;
+        window.localStorage.removeItem(CONVERSATION_STORAGE_KEY);
+      } finally {
+        if (loadAbortRef.current === controller) {
+          loadAbortRef.current = null;
+          setHistoryLoading(false);
+        } else if (loadAbortRef.current === null) {
+          // The load was superseded by a send or a new chat.
+          setHistoryLoading(false);
+        }
       }
-
-      const data = (await response.json()) as ConversationDetail;
-      setMessages(Array.isArray(data.messages) ? data.messages : []);
-      setConversationId(data.id);
-      conversationIdRef.current = data.id;
-      window.localStorage.setItem(CONVERSATION_STORAGE_KEY, data.id);
-    } catch (loadError) {
-      if (isAbortError(loadError)) return;
-
-      if (!options?.silent) {
-        setError(
-          loadError instanceof Error ? loadError.message : 'Could not load that conversation.',
-        );
-      }
-      setMessages([]);
-      setConversationId(null);
-      conversationIdRef.current = null;
-      window.localStorage.removeItem(CONVERSATION_STORAGE_KEY);
-    } finally {
-      if (loadAbortRef.current === controller) {
-        loadAbortRef.current = null;
-        setHistoryLoading(false);
-      } else if (loadAbortRef.current === null) {
-        // The load was superseded by a send or a new chat.
-        setHistoryLoading(false);
-      }
-    }
-  }, []);
+    },
+    [queryClient],
+  );
 
   const newChat = useCallback(() => {
     abortRef.current?.abort();
@@ -176,13 +175,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       abortRef.current = controller;
 
       try {
-        const response = await fetch('/api/aya/agent/chat', {
+        const response = await fetch(getApiUrl('/agent/chat'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: trimmed,
             conversationId: conversationIdRef.current,
           }),
+          credentials: 'include',
           signal: controller.signal,
         });
 
@@ -202,7 +202,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           ...previous,
           { role: 'assistant', content: data.content as string },
         ]);
-        void refreshConversations();
+        await queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
       } catch (sendError) {
         if (isAbortError(sendError)) {
           return;
@@ -220,17 +220,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [refreshConversations],
+    [queryClient],
   );
 
   useEffect(() => {
-    void refreshConversations();
-
     const storedId = window.localStorage.getItem(CONVERSATION_STORAGE_KEY);
     if (storedId) {
       void loadConversation(storedId, { silent: true });
     }
-  }, [loadConversation, refreshConversations]);
+  }, [loadConversation]);
 
   useEffect(() => {
     return () => {
@@ -246,8 +244,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       historyLoading,
       error,
       conversationId,
-      conversations,
-      conversationsLoading,
+      conversations: conversationsQueryState.data ?? [],
+      conversationsLoading: conversationsQueryState.isPending,
       sendMessage,
       newChat,
       loadConversation,
@@ -260,8 +258,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       historyLoading,
       error,
       conversationId,
-      conversations,
-      conversationsLoading,
+      conversationsQueryState.data,
+      conversationsQueryState.isPending,
       sendMessage,
       newChat,
       loadConversation,
