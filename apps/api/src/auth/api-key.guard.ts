@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { getServerEnv } from '@workspace/env';
 import type { Request } from 'express';
 import { IS_PUBLIC_KEY } from './public.decorator';
 
@@ -29,15 +30,30 @@ export class ApiKeyGuard implements CanActivate {
 
   constructor(private readonly reflector: Reflector) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
     if (isPublic) return true;
 
-    const configuredKey = process.env.API_KEY?.trim();
+    const env = getServerEnv();
+    const configuredKey = env.API_KEY;
     const request = context.switchToHttp().getRequest<Request>();
+    if (env.NODE_ENV !== 'test') {
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(request.headers)) {
+        if (typeof value === 'string') headers.set(name, value);
+      }
+
+      const { auth } = await import('@workspace/auth');
+      const session = await auth.api.getSession({ headers });
+      if (session) {
+        (request as Request & { auth?: typeof session }).auth = session;
+        return true;
+      }
+    }
+
     if (!configuredKey) {
       this.logger.error('API_KEY is not configured; rejecting a protected request.');
       throw new UnauthorizedException('A valid x-api-key header is required.');

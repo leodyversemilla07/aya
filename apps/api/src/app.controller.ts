@@ -1,6 +1,7 @@
-import { BadRequestException, Controller, Delete, Get, Param, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Delete, Get, Param, Query, Req } from '@nestjs/common';
 import { AppService } from './app.service';
 import { Public } from './auth/public.decorator';
+import type { AuthenticatedRequest } from './auth/request';
 
 @Controller()
 export class AppController {
@@ -30,26 +31,27 @@ export class AppController {
   }
 
   @Get('conversations')
-  listConversations() {
-    return this.appService.listConversations();
+  listConversations(@Req() request: AuthenticatedRequest) {
+    return this.appService.listConversations(request.auth?.user.id);
   }
 
   @Get('conversations/:id')
   getConversation(
     @Param('id') id: string,
-    @Query('limit') limitQuery?: string,
-    @Query('before') before?: string,
+    @Query('limit') limitQuery: string | undefined,
+    @Query('before') before: string | undefined,
+    @Req() request: AuthenticatedRequest,
   ) {
     const limit = limitQuery === undefined ? 100 : Number(limitQuery);
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
       throw new BadRequestException('limit must be an integer between 1 and 200.');
     }
 
-    return this.appService.getConversation(id, { limit, before });
+    return this.appService.getConversation(id, { limit, before }, request.auth?.user.id);
   }
 
   @Delete('conversations/:id')
-  deleteConversation(@Param('id') id: string) {
-    return this.appService.deleteConversation(id);
+  deleteConversation(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.appService.deleteConversation(id, request.auth?.user.id);
   }
 }

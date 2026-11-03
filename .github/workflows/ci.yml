@@ -18,6 +18,7 @@ jobs:
       DATABASE_URL: file:./ci.db
       LLM_API_KEY: test-key
       API_KEY: test-api-key
+      BETTER_AUTH_SECRET: test-secret-for-ci-only-change-me
       NEXT_TELEMETRY_DISABLED: "1"
 
     steps:

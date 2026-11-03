@@ -92,8 +92,9 @@ export class AppService {
     };
   }
 
-  async listConversations() {
+  async listConversations(userId?: string) {
     const conversations = await prisma.conversation.findMany({
+      where: userId ? { userId } : undefined,
       orderBy: { updatedAt: 'desc' },
       take: 50,
       include: {
@@ -124,9 +125,13 @@ export class AppService {
     });
   }
 
-  async getConversation(id: string, options: { limit?: number; before?: string } = {}) {
+  async getConversation(
+    id: string,
+    options: { limit?: number; before?: string } = {},
+    userId?: string,
+  ) {
     const conversation = await prisma.conversation.findUnique({
-      where: { id },
+      where: { id, ...(userId ? { userId } : {}) },
       select: { id: true, title: true, createdAt: true, updatedAt: true },
     });
 
@@ -187,9 +192,9 @@ export class AppService {
     };
   }
 
-  async deleteConversation(id: string) {
+  async deleteConversation(id: string, userId?: string) {
     const conversation = await prisma.conversation.findUnique({
-      where: { id },
+      where: { id, ...(userId ? { userId } : {}) },
       select: { id: true },
     });
 
@@ -197,7 +202,9 @@ export class AppService {
       throw new NotFoundException(`Conversation "${id}" was not found.`);
     }
 
-    await prisma.conversation.delete({ where: { id } });
+    await prisma.conversation.delete({
+      where: { id },
+    });
     return { deleted: true, id };
   }
 }

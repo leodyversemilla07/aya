@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@workspace/auth": "workspace:*",
+    "@workspace/env": "workspace:*",
     "@workspace/ui": "workspace:*",
     "lucide-react": "^1.8.0",
     "next": "16.4.3",

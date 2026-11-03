@@ -11,6 +11,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import type { AuthenticatedRequest } from '../auth/request';
 import { AgentService } from './agent.service';
 
 const chatRequestSchema = z.object({
@@ -31,7 +32,7 @@ export class AgentController {
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async chat(
     @Body() body: unknown,
-    @Req() request: Request,
+    @Req() request: AuthenticatedRequest,
     @Res({ passthrough: true }) response: Response,
   ) {
     const parsed = chatRequestSchema.safeParse(body);
@@ -52,6 +53,7 @@ export class AgentController {
         parsed.data.message,
         parsed.data.conversationId,
         abortController.signal,
+        request.auth?.user.id,
       );
     } finally {
       request.off('aborted', abort);

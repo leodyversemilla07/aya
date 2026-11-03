@@ -23,7 +23,10 @@
     "@nestjs/core": "^11.2.8",
     "@nestjs/platform-express": "^11.2.8",
     "@nestjs/throttler": "^6.7.1",
+    "@workspace/auth": "workspace:*",
+    "@workspace/ai": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/env": "workspace:*",
     "dotenv": "^18.0.9",
     "helmet": "^8.3.0",
     "reflect-metadata": "^0.2.2",
@@ -56,7 +59,12 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "moduleNameMapper": {
-      "^@workspace/db$": "<rootDir>/../../../packages/db/src/index.ts"
+      "^@workspace/db$": "<rootDir>/../../../packages/db/src/index.ts",
+      "^@workspace/env$": "<rootDir>/../../../packages/env/src/index.ts",
+      "^\\.\\/shared\\.js$": "<rootDir>/../../../packages/env/src/shared.ts",
+      "^\\.\\/server\\.js$": "<rootDir>/../../../packages/env/src/server.ts",
+      "^\\.\\/web\\.js$": "<rootDir>/../../../packages/env/src/web.ts",
+      "^\\.\\/auth\\.js$": "<rootDir>/../../../packages/env/src/auth.ts"
     },
     "collectCoverageFrom": ["**/*.(t|j)s"],
     "coverageDirectory": "../coverage",
