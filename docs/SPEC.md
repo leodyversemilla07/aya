@@ -11,7 +11,8 @@ natural language conversation.
 1. **Staff augmentation intelligence** — AI assistant for managing developer resources
 2. **Conversational interface** — natural language queries about teams and projects
 3. **Data-driven decisions** — utilization metrics, contract tracking, performance data
-4. **Safe deployment** — API-key auth, server-side proxy, sanitized errors, rate limiting
+4. **Safe deployment** — Better Auth sessions, API-key compatibility, sanitized errors, and rate
+   limiting
 
 ## Architecture
 
@@ -44,14 +45,18 @@ apps/
     app/
       page.tsx      Dashboard with live stats and chat
       chat/         Dedicated chat page
-      api/aya/      Server-side proxy to the NestJS API
     components/
       chat/         ChatProvider, messages, composer, welcome
       dashboard/    Stats cards and quick actions
 packages/
   db/               Prisma schema, migrations, seed data
+  auth/             Shared Better Auth configuration and client
   ui/               shadcn/ui component library
 ```
+
+The Next.js frontend has no `app/api` route directory. It calls the NestJS API directly using
+`NEXT_PUBLIC_API_URL`. Better Auth endpoints are hosted by NestJS under `/api/auth/*`, while
+application endpoints use `/stats`, `/conversations`, and `/agent/chat`.
 
 ## Features
 
@@ -131,8 +136,8 @@ supports cursor pagination with `limit` and `before` query parameters.
 - A missing or invalid key is rejected even in development and test environments.
 - `/`, `/health`, and `/ready` are public.
 - `/agent/chat` is rate limited to 20 requests per minute per API client IP by default.
-- The web proxy allowlists API routes, rejects cross-origin state changes, requires JSON for chat,
-  and enforces a bounded request body.
+- Browser requests use credentialed CORS and Better Auth sessions; API-key authentication remains
+  available for internal clients.
 
 ### Error handling
 
@@ -152,7 +157,6 @@ Provider errors are mapped to safe messages:
 |-------|-------------|
 | `/` | Dashboard with live stats, quick actions, and embedded chat |
 | `/chat` | Dedicated chat interface |
-| `/api/aya/[...path]` | Server-side proxy that attaches `AYA_API_KEY` |
 
 The sidebar shows navigation, capability shortcuts, and recent conversation history. Chat state is
 shared through `ChatProvider`, so starting a chat from the dashboard or sidebar stays consistent
@@ -160,7 +164,7 @@ across pages. The active conversation is remembered in `localStorage`.
 
 ## Environment variables
 
-### API — `apps/api/.env`
+### Root `.env`
 
 ```env
 DATABASE_URL="file:./dev.db"
@@ -177,16 +181,12 @@ API_KEY="long-random-string"
 CORS_ORIGINS="http://localhost:3000"
 ```
 
-### Web — `apps/web/.env`
-
 ```env
-AYA_API_URL="http://localhost:3001"
-AYA_API_KEY="same-value-as-apps/api/.env"
-AYA_ALLOWED_ORIGINS=""
+NEXT_PUBLIC_API_URL="http://localhost:3001"
 ```
 
-These values are server-only and must not use the `NEXT_PUBLIC_` prefix. A production deployment
-must also provide user authentication or an identity-aware gateway in front of the web proxy.
+`NEXT_PUBLIC_API_URL` is the only browser-exposed value. API keys and authentication secrets remain
+server-only. A production deployment must configure `CORS_ORIGINS` with the web origin.
 
 ## Database schema
 

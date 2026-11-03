@@ -1,5 +1,10 @@
 # Aya
 
+## Documentation
+
+- [Development setup](docs/DEVELOPMENT_SETUP.md)
+- [Project specification](docs/SPEC.md)
+
 AI-powered staff augmentation management agent. Aya helps managers find available developers,
 match skills to projects, track utilization, monitor contracts, and flag risks through natural
 language conversation.
@@ -9,7 +14,7 @@ language conversation.
 ```
 apps/
   api/    NestJS 11 backend — agent loop, LLM tool calling, Prisma ORM
-  web/    Next.js 16 frontend — dashboard, chat UI, server-side API proxy
+  web/    Next.js 16 frontend — dashboard and chat UI
 packages/
   db/     Shared Prisma schema, SQLite database, seed data
   auth/   Shared Better Auth configuration and session handlers
@@ -17,12 +22,11 @@ packages/
 ```
 
 Users sign in through Better Auth at `/sign-in` or `/sign-up`. Sessions are stored in the shared
-Prisma database and held in secure HttpOnly cookies. The browser never talks to the API directly.
-Requests go through the Next.js route handler at `/api/aya/[...path]`, which forwards the session
-cookie and attaches the API key server-side. The key is not exposed to the client.
-The proxy only exposes known API routes, rejects cross-origin state changes, requires JSON for chat,
-and enforces a bounded request body. A production deployment should additionally place the web app
-behind an identity-aware gateway for enterprise SSO and per-user rate limiting.
+Prisma database and held in secure HttpOnly cookies. The browser calls the NestJS API directly
+using `NEXT_PUBLIC_API_URL` and credentialed Better Auth session cookies. The API validates the
+session and CORS origin.
+A production deployment should additionally place the web app behind an identity-aware gateway for
+enterprise SSO and per-user rate limiting.
 
 ## Agent capabilities
 
@@ -61,7 +65,7 @@ bun install
 
 # 2. Configure environment
 cp .env.example .env
-# Set LLM_API_KEY, BETTER_AUTH_SECRET, API_KEY, and matching AYA_API_KEY.
+# Set LLM_API_KEY, BETTER_AUTH_SECRET, API_KEY, CORS_ORIGINS, and NEXT_PUBLIC_API_URL.
 
 # 3. Create and seed the SQLite database
 bun run db:push
@@ -107,9 +111,9 @@ BETTER_AUTH_SECRET="replace-with-a-random-32-byte-secret"
 BETTER_AUTH_URL="http://localhost:3000"
 ```
 
-`API_KEY` is required in every environment; the API refuses to start without it. The web proxy
-must use the same value in `AYA_API_KEY`. The root environment is server-only; never rename these
-variables to `NEXT_PUBLIC_*`.
+`API_KEY` is required in every environment; the API refuses to start without it.
+`NEXT_PUBLIC_API_URL` is the only browser-exposed environment value; never expose API keys or
+other server secrets.
 
 ## API endpoints
 
@@ -118,7 +122,7 @@ variables to `NEXT_PUBLIC_*`.
 | `/` | GET | Public | Service greeting (`Hello World!`) |
 | `/health` | GET | Public | Process liveness check |
 | `/ready` | GET | Public | Database readiness check |
-| `/api/auth/*` | GET/POST | Public/session | Better Auth sign-in, sign-up, and session endpoints |
+| `http://localhost:3001/api/auth/*` | GET/POST | Public/session | Better Auth sign-in, sign-up, and session endpoints |
 | `/stats` | GET | Session/API key | Dashboard statistics and alert count |
 | `/conversations` | GET | Session/API key | User's recent conversations |
 | `/conversations/:id` | GET | Session/API key | User's conversation messages |
@@ -134,10 +138,10 @@ variables to `NEXT_PUBLIC_*`.
 ```
 
 Send the key as `x-api-key: <key>` or `Authorization: Bearer <key>`. The `/agent/chat` route is
-rate limited to 20 requests/minute per API client IP by default. When requests pass through the web
-proxy, users share the proxy's IP; use an identity-aware gateway or edge limiter for per-user quotas.
+rate limited to 20 requests/minute per API client IP by default.
 
-Conversation history is bounded and paginated with `?limit=100&before=<message-id>`.
+API-key clients may send `x-api-key` or a bearer token. Conversation history is bounded and
+paginated with `?limit=100&before=<message-id>`.
 
 ## Scripts
 
@@ -150,7 +154,7 @@ bun run lint                # Check with Biome
 bun run lint:fix            # Auto-fix with Biome
 bun run format              # Format with Biome
 bun run typecheck           # TypeScript type checking
-bun run test                # Unit and web proxy tests
+bun run test                # Unit tests
 bun run test:e2e            # API end-to-end and integration tests
 
 bun run db:generate         # Generate the Prisma client
@@ -174,12 +178,10 @@ Production seeding requires `SEED_FORCE=true`.
 - Set `NODE_ENV=production` and a strong `API_KEY`.
 - Put the web app behind an identity-aware gateway for enterprise SSO and per-user rate limiting.
   Better Auth sessions provide the application-level user identity.
-- Set `CORS_ORIGINS` to the deployed web origin(s), and set `AYA_ALLOWED_ORIGINS` when a reverse
-  proxy changes the browser-visible origin.
+- Set `CORS_ORIGINS` to the deployed web origin(s) and enable credentialed CORS.
 - Apply migrations with `bun run db:migrate:deploy` before starting the API.
 - Build `@workspace/db` before starting the API: `bun run build` does this through Turborepo.
   The package's compiled output in `packages/db/dist` works on Node.js 20.
-- The web app reads `AYA_API_URL`/`AYA_API_KEY` and Better Auth settings at request time in the
-  server-side proxy.
+- The web app reads `NEXT_PUBLIC_API_URL` at build time for direct browser API requests.
 - SQLite is suitable for a single API instance. Move to Postgres before scaling the API
   horizontally or running multiple replicas.

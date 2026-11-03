@@ -105,6 +105,7 @@ bounded conversation pagination, and database-backed tool behavior. No real LLM 
 
 - Helmet security headers and `x-powered-by` disabled.
 - CORS allowlist from `CORS_ORIGINS`.
+- Better Auth endpoints are served at `/api/auth/*`; browser clients must use credentialed CORS.
 - Constant-time API-key comparison.
 - Global exception filter that does not leak stack traces or provider payloads.
 - LLM provider errors are mapped to safe, actionable messages.

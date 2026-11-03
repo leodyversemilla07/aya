@@ -33,8 +33,7 @@ This installs workspace dependencies and runs `prisma generate` for `@workspace/
 cp .env.example .env
 ```
 
-Set `LLM_API_KEY` in `.env`. Generate a shared API key and use the same value for `API_KEY` and
-`AYA_API_KEY`:
+Set `LLM_API_KEY` in `.env`. Generate an API key for internal API clients:
 
 ```bash
 openssl rand -hex 32
@@ -98,13 +97,12 @@ BETTER_AUTH_URL="http://localhost:3000"
 - Provider factories are available from `@workspace/ai/providers/*` when an application needs
   more than the environment-selected provider. The API currently uses the environment-selected
   provider through the shared `Models` registry.
-- `API_KEY` is required in every environment. The API refuses to start without it, and the
-  web proxy must use the same value in `AYA_API_KEY`.
-- `CORS_ORIGINS` is a comma-separated allowlist. Use `*` only if you intentionally allow all
-  origins.
+- `API_KEY` is required in every environment. The API refuses to start without it.
+- `CORS_ORIGINS` is a comma-separated allowlist. Use explicit web origins when sending
+  credentialed Better Auth requests; do not use `*` with credentials.
 
-The root `.env` is loaded by the API, web proxy, Prisma CLI, and seed process. These values are
-server-only; never rename them to `NEXT_PUBLIC_*`.
+The root `.env` is loaded by the API, web build, Prisma CLI, and seed process. Only
+`NEXT_PUBLIC_API_URL` is exposed to browser code; keep all secrets server-only.
 
 ## Project structure
 
@@ -121,7 +119,6 @@ apps/
     app/
       page.tsx      Dashboard (stats + chat)
       chat/         Dedicated chat page
-      api/aya/      Server-side API proxy
     components/
       chat/         Shared chat provider, messages, composer, welcome
 packages/
@@ -147,7 +144,7 @@ packages/
 | `bun run lint:fix` | Apply safe and unsafe Biome fixes |
 | `bun run format` | Format with Biome |
 | `bun run typecheck` | TypeScript type checking |
-| `bun run test` | API unit tests and web proxy tests |
+| `bun run test` | API and web unit tests |
 | `bun run test:e2e` | API end-to-end and tool integration tests |
 | `bun run db:generate` | Generate the Prisma client |
 | `bun run db:push` | Push the Prisma schema to SQLite |
@@ -170,15 +167,14 @@ starting the tests, so no manual database setup is required.
 
 The tests do not call a real LLM. They cover public health/readiness routes, request validation,
 API-key enforcement, a mocked agent tool-call loop, bounded conversation pagination, canonical
-skill matching, staffing-state rules, ambiguous client names, and the web proxy's origin, route,
-content-type, response-header, and body limits.
+skill matching, staffing-state rules, and ambiguous client names.
 
-## Authentication and proxy flow
+## Authentication and API flow
 
-1. The browser signs in through Better Auth at `/api/auth/*`.
+1. The browser signs in through Better Auth at the API's `/api/auth/*` endpoint.
 2. Better Auth stores users and sessions in the shared Prisma database.
-3. The browser calls `/api/aya/<path>` on the Next.js server.
-4. The route handler validates the request and forwards the session cookie to NestJS.
+3. The browser calls the NestJS API at `NEXT_PUBLIC_API_URL` with credentials included.
+4. Credentialed CORS permits the configured web origin.
 5. The API validates the Better Auth session and scopes conversations to the authenticated user.
 6. API-key authentication remains available for internal clients and automated tests.
 
@@ -199,10 +195,9 @@ and timeout failures produce actionable messages.
   `bun run db:migrate:deploy`) and check `DATABASE_URL`.
 - **Database file created in the wrong place**: relative SQLite paths resolve from
   `packages/db/prisma`. Use an absolute path or keep the file there.
-- **401 from the API**: make sure `API_KEY` in `.env` matches `AYA_API_KEY` in
-  `.env`.
-- **403 from the web proxy**: the state-changing request did not come from an allowed origin. Set
-  `AYA_ALLOWED_ORIGINS` to the deployed web origin when a reverse proxy changes the request origin.
+- **401 from the API**: sign in through Better Auth or provide `API_KEY` to an internal API client.
+- **CORS errors from the API**: set `CORS_ORIGINS` to the exact web origin and ensure the browser
+  request includes credentials.
 - **`LLM_API_KEY is not configured`**: add a provider key to `.env`; the API itself
   starts without it, but chat requests will return 503.
 - **`@workspace/db` fails to load under Node.js**: run `bun run build` so `packages/db/dist`
