@@ -1,5 +1,4 @@
 import { All, Controller, Req, Res } from '@nestjs/common';
-import { auth } from '@workspace/auth';
 import type { Request, Response } from 'express';
 import { Public } from './public.decorator';
 
@@ -8,6 +7,9 @@ export class AuthController {
   @All('*')
   @Public()
   async handle(@Req() request: Request, @Res() response: Response) {
+    // Load Better Auth lazily so its ESM-only dependency graph is not pulled in
+    // for routes that never serve authentication (for example, API e2e tests).
+    const { auth } = await import('@workspace/auth');
     const headers = new Headers();
     for (const [name, value] of Object.entries(request.headers)) {
       if (typeof value === 'string') headers.set(name, value);
