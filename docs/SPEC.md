@@ -246,7 +246,7 @@ pnpm run db:drift
 pnpm run build
 ```
 
-CI runs the same checks on Node.js 20 with pnpm 12.16.
+CI runs the same checks on Node.js 24 with pnpm 12.16.
 
 ## Success criteria
 
@@ -257,4 +257,4 @@ CI runs the same checks on Node.js 20 with pnpm 12.16.
 - [x] Risks flagged proactively
 - [x] Multi-turn conversations supported
 - [x] API key kept out of browser code
-- [x] Production build works on Node.js 20
+- [x] Production build works on Node.js 24

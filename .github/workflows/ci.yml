@@ -38,7 +38,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -79,3 +79,4 @@ jobs:
           name: playwright-report
           path: apps/web/playwright-report
           retention-days: 7
+          if-no-files-found: ignore

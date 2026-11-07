@@ -88,12 +88,12 @@ served by NestJS.
 | LLM | Shared `@workspace/ai` package (OpenAI, OpenRouter, OpenCode Zen, Anthropic, Google Gemini, custom OpenAI-compatible) |
 | Validation | Zod 4 |
 | Auth | Better Auth email/password sessions + API-key compatibility |
-| Tooling | Biome (lint + format), Jest (unit + e2e), Turborepo, pnpm 12.16 |
-| CI | GitHub Actions on Node.js 20 |
+| Tooling | Biome (lint + format), Jest (API), Vitest + RTL (web), Playwright (browser E2E), Turborepo, pnpm 12.16 |
+| CI | GitHub Actions on Node.js 24 |
 
 ## Quick start
 
-Requires **Node.js 20.9+** and **pnpm 12.16+**. The exact pnpm version is pinned in `package.json`.
+Requires **Node.js 24.15+** and **pnpm 12.16+**. The exact pnpm version is pinned in `package.json`.
 
 ```bash
 # 1. Install dependencies (also generates the Prisma client)
@@ -309,7 +309,7 @@ tool-call loop, bounded conversation pagination, canonical skill matching, staff
 ambiguous client names.
 
 CI runs audit, migration drift checks, lint, typecheck, unit tests, API e2e tests, Playwright browser
-tests, and the production build on Node.js 20 with pnpm 12.16.
+tests, and the production build on Node.js 24 with pnpm 12.16.
 
 ## LLM providers
 
@@ -332,7 +332,7 @@ application needs more than the environment-selected provider.
 - Set `CORS_ORIGINS` to the deployed web origin(s) and enable credentialed CORS.
 - Apply migrations with `pnpm run db:migrate:deploy` before starting the API.
 - Run `pnpm run build`; Turborepo compiles `@workspace/db` to `packages/db/dist` so the API runs on
-  Node.js 20 without a TypeScript loader.
+  Node.js without a TypeScript loader.
 - The web app reads `NEXT_PUBLIC_API_URL` at build time for direct browser API calls.
 
 > [!WARNING]

@@ -14,7 +14,7 @@ Aya is an AI-powered staff augmentation management agent:
 
 ## Prerequisites
 
-- Node.js 20.9 or newer
+- Node.js 24.15 or newer
 - pnpm 12.16 or newer (`npm install --global corepack@latest && corepack enable pnpm`; the exact version is pinned in `package.json`)
 
 ## Quick start
@@ -65,7 +65,7 @@ pnpm run dev
 pnpm run build
 ```
 
-The build compiles `@workspace/db` to `packages/db/dist` so the API can run on Node.js 20 without
+The build compiles `@workspace/db` to `packages/db/dist` so the API can run on Node.js without
 a TypeScript loader.
 
 ## Environment variables
