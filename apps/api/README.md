@@ -8,7 +8,7 @@ dashboard statistics, conversation history, and a health check.
 From the repository root:
 
 ```bash
-bun install
+pnpm install
 cp .env.example .env
 ```
 
@@ -16,19 +16,19 @@ Configure `LLM_API_KEY`, `API_KEY`, and (optionally) `DATABASE_URL` in `.env`. T
 and seed the SQLite database:
 
 ```bash
-bun run db:push
-bun run db:seed
+pnpm run db:push
+pnpm run db:seed
 ```
 
 ## Run
 
 ```bash
 # development (watch mode)
-bun run dev
+pnpm run dev
 
 # production
-bun run build
-bun run --cwd apps/api start
+pnpm run build
+pnpm --filter @aya/api run start
 ```
 
 The API listens on `API_PORT` (default `3001`).
@@ -92,11 +92,11 @@ only user/assistant messages are replayed as model context.
 ## Tests
 
 ```bash
-bun run test
-bun run test:e2e
+pnpm run test
+pnpm run test:e2e
 ```
 
-`bun run test:e2e` applies the committed migrations before starting the API tests. Unit tests cover
+`pnpm run test:e2e` applies the committed migrations before starting the API tests. Unit tests cover
 shared staffing rules, canonical skill matching, tool schemas, and provider-request cancellation.
 E2E tests cover public routes, authentication, request validation, a mocked agent tool-call loop,
 bounded conversation pagination, and database-backed tool behavior. No real LLM calls are made.

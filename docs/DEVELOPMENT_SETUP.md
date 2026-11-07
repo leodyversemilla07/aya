@@ -9,20 +9,20 @@ Aya is an AI-powered staff augmentation management agent:
 - **LLM integration**: Shared `@workspace/ai` package supporting OpenAI-compatible providers,
   Anthropic, and Google Gemini
 - **Database**: SQLite for local development and the demo deployment
-- **Package manager**: Bun 1.4
+- **Package manager**: pnpm 12.16
 - **Monorepo**: Turborepo
 
 ## Prerequisites
 
 - Node.js 20.9 or newer
-- Bun 1.4 or newer (`curl -fsSL https://bun.sh/install | bash`)
+- pnpm 12.16 or newer (`npm install --global corepack@latest && corepack enable pnpm`; the exact version is pinned in `package.json`)
 
 ## Quick start
 
 ### 1. Install dependencies
 
 ```bash
-bun install
+pnpm install
 ```
 
 This installs workspace dependencies and runs `prisma generate` for `@workspace/db`.
@@ -42,8 +42,8 @@ openssl rand -hex 32
 ### 3. Create and seed the database
 
 ```bash
-bun run db:push
-bun run db:seed
+pnpm run db:push
+pnpm run db:seed
 ```
 
 `DATABASE_URL="file:./dev.db"` creates `packages/db/prisma/dev.db`. Relative SQLite paths are
@@ -52,7 +52,7 @@ resolved from the `packages/db/prisma` directory, not from the API working direc
 ### 4. Start development servers
 
 ```bash
-bun run dev
+pnpm run dev
 ```
 
 - Web: http://localhost:3000
@@ -62,7 +62,7 @@ bun run dev
 ### 5. Production build
 
 ```bash
-bun run build
+pnpm run build
 ```
 
 The build compiles `@workspace/db` to `packages/db/dist` so the API can run on Node.js 20 without
@@ -136,33 +136,33 @@ packages/
 
 | Script | Description |
 |--------|-------------|
-| `bun run dev` | Start all apps in development mode |
-| `bun run build` | Production build for all packages |
-| `bun run audit` | Audit production dependencies |
-| `bun run audit:all` | Audit all dependencies, including build tooling |
-| `bun run lint` | Check with Biome |
-| `bun run lint:fix` | Apply safe and unsafe Biome fixes |
-| `bun run format` | Format with Biome |
-| `bun run typecheck` | TypeScript type checking |
-| `bun run test` | API and web unit tests |
-| `bun run test:e2e` | API end-to-end and tool integration tests |
-| `bun run db:generate` | Generate the Prisma client |
-| `bun run db:push` | Push the Prisma schema to SQLite |
-| `bun run db:migrate` | Create a development migration |
-| `bun run db:migrate:deploy` | Apply committed migrations |
-| `bun run db:drift` | Verify committed migrations match the Prisma schema |
-| `bun run db:seed` | Seed demo data |
-| `bun run db:studio` | Open Prisma Studio |
+| `pnpm run dev` | Start all apps in development mode |
+| `pnpm run build` | Production build for all packages |
+| `pnpm run audit` | Audit production dependencies |
+| `pnpm run audit:all` | Audit all dependencies, including build tooling |
+| `pnpm run lint` | Check with Biome |
+| `pnpm run lint:fix` | Apply safe and unsafe Biome fixes |
+| `pnpm run format` | Format with Biome |
+| `pnpm run typecheck` | TypeScript type checking |
+| `pnpm run test` | API and web unit tests |
+| `pnpm run test:e2e` | API end-to-end and tool integration tests |
+| `pnpm run db:generate` | Generate the Prisma client |
+| `pnpm run db:push` | Push the Prisma schema to SQLite |
+| `pnpm run db:migrate` | Create a development migration |
+| `pnpm run db:migrate:deploy` | Apply committed migrations |
+| `pnpm run db:drift` | Verify committed migrations match the Prisma schema |
+| `pnpm run db:seed` | Seed demo data |
+| `pnpm run db:studio` | Open Prisma Studio |
 
 ## Testing
 
 ```bash
-bun run test
-bun run test:e2e
+pnpm run test
+pnpm run test:e2e
 ```
 
 The e2e suite uses `file:./test-e2e.db` by default
-(`packages/db/prisma/test-e2e.db`). `bun run test:e2e` applies the committed migrations before
+(`packages/db/prisma/test-e2e.db`). `pnpm run test:e2e` applies the committed migrations before
 starting the tests, so no manual database setup is required.
 
 The tests do not call a real LLM. They cover public health/readiness routes, request validation,
@@ -191,8 +191,8 @@ and timeout failures produce actionable messages.
 
 ## Troubleshooting
 
-- **`PrismaClientInitializationError` or missing tables**: run `bun run db:push` (or
-  `bun run db:migrate:deploy`) and check `DATABASE_URL`.
+- **`PrismaClientInitializationError` or missing tables**: run `pnpm run db:push` (or
+  `pnpm run db:migrate:deploy`) and check `DATABASE_URL`.
 - **Database file created in the wrong place**: relative SQLite paths resolve from
   `packages/db/prisma`. Use an absolute path or keep the file there.
 - **401 from the API**: sign in through Better Auth or provide `API_KEY` to an internal API client.
@@ -200,5 +200,5 @@ and timeout failures produce actionable messages.
   request includes credentials.
 - **`LLM_API_KEY is not configured`**: add a provider key to `.env`; the API itself
   starts without it, but chat requests will return 503.
-- **`@workspace/db` fails to load under Node.js**: run `bun run build` so `packages/db/dist`
+- **`@workspace/db` fails to load under Node.js**: run `pnpm run build` so `packages/db/dist`
   exists, and start the API from the repository root or a workspace-aware context.

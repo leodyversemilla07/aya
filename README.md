@@ -9,7 +9,7 @@
 
 [![CI](https://github.com/leodyversemilla07/aya/actions/workflows/ci.yml/badge.svg)](https://github.com/leodyversemilla07/aya/actions/workflows/ci.yml)
 ![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-3c873a?style=flat-square)
-[![Bun](https://img.shields.io/badge/Bun-1.4-fbf0df?style=flat-square&logo=bun&logoColor=black)](https://bun.sh)
+[![pnpm](https://img.shields.io/badge/pnpm-12.16-f69220?style=flat-square&logo=pnpm&logoColor=white)](https://pnpm.io)
 [![TypeScript](https://img.shields.io/badge/TypeScript-blue?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![NestJS](https://img.shields.io/badge/NestJS-11-e0234e?style=flat-square&logo=nestjs&logoColor=white)](https://nestjs.com)
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org)
@@ -88,27 +88,27 @@ served by NestJS.
 | LLM | Shared `@workspace/ai` package (OpenAI, OpenRouter, OpenCode Zen, Anthropic, Google Gemini, custom OpenAI-compatible) |
 | Validation | Zod 4 |
 | Auth | Better Auth email/password sessions + API-key compatibility |
-| Tooling | Biome (lint + format), Jest (unit + e2e), Turborepo, Bun 1.4 |
+| Tooling | Biome (lint + format), Jest (unit + e2e), Turborepo, pnpm 12.16 |
 | CI | GitHub Actions on Node.js 20 |
 
 ## Quick start
 
-Requires **Node.js 20.9+** and **Bun 1.4+**.
+Requires **Node.js 20.9+** and **pnpm 12.16+**. The exact pnpm version is pinned in `package.json`.
 
 ```bash
 # 1. Install dependencies (also generates the Prisma client)
-bun install
+pnpm install
 
 # 2. Configure environment
 cp .env.example .env
 # Set BETTER_AUTH_SECRET, API_KEY, and LLM_API_KEY at minimum.
 
 # 3. Create and seed the SQLite database
-bun run db:push
-bun run db:seed
+pnpm run db:push
+pnpm run db:seed
 
 # 4. Run API (http://localhost:3001) and web (http://localhost:3000)
-bun run dev
+pnpm run dev
 ```
 
 Then open http://localhost:3000, create an account, and start chatting with Aya. The API health
@@ -118,8 +118,8 @@ The SQLite file lives at `packages/db/prisma/dev.db` when `DATABASE_URL="file:./
 For a migration-based workflow instead of `db:push`:
 
 ```bash
-bun run db:migrate:deploy   # apply committed migrations
-bun run db:migrate          # create a migration during development
+pnpm run db:migrate:deploy   # apply committed migrations
+pnpm run db:migrate          # create a migration during development
 ```
 
 ## Configuration
@@ -257,37 +257,37 @@ conversations are preserved unless `SEED_RESET_CONVERSATIONS=true`. Production s
 `SEED_FORCE=true`.
 
 ```bash
-bun run db:seed      # seed demo data
-bun run db:studio    # browse data in Prisma Studio
+pnpm run db:seed      # seed demo data
+pnpm run db:studio    # browse data in Prisma Studio
 ```
 
 ## Scripts
 
 | Script | Description |
 |--------|-------------|
-| `bun run dev` | Start all apps in development mode |
-| `bun run build` | Production build for all workspaces |
-| `bun run lint` | Check with Biome |
-| `bun run lint:fix` | Apply safe and unsafe Biome fixes |
-| `bun run format` | Format with Biome |
-| `bun run typecheck` | TypeScript type checking |
-| `bun run test` | Unit tests |
-| `bun run test:e2e` | API end-to-end and tool integration tests |
-| `bun run audit` | Audit production dependencies |
-| `bun run audit:all` | Audit all dependencies, including tooling |
-| `bun run db:generate` | Generate the Prisma client |
-| `bun run db:push` | Push the Prisma schema to SQLite |
-| `bun run db:migrate` | Create a development migration |
-| `bun run db:migrate:deploy` | Apply committed migrations |
-| `bun run db:drift` | Verify committed migrations match the Prisma schema |
-| `bun run db:seed` | Seed demo data |
-| `bun run db:studio` | Open Prisma Studio |
+| `pnpm run dev` | Start all apps in development mode |
+| `pnpm run build` | Production build for all workspaces |
+| `pnpm run lint` | Check with Biome |
+| `pnpm run lint:fix` | Apply safe and unsafe Biome fixes |
+| `pnpm run format` | Format with Biome |
+| `pnpm run typecheck` | TypeScript type checking |
+| `pnpm run test` | Unit tests |
+| `pnpm run test:e2e` | API end-to-end and tool integration tests |
+| `pnpm run audit` | Audit production dependencies |
+| `pnpm run audit:all` | Audit all dependencies, including tooling |
+| `pnpm run db:generate` | Generate the Prisma client |
+| `pnpm run db:push` | Push the Prisma schema to SQLite |
+| `pnpm run db:migrate` | Create a development migration |
+| `pnpm run db:migrate:deploy` | Apply committed migrations |
+| `pnpm run db:drift` | Verify committed migrations match the Prisma schema |
+| `pnpm run db:seed` | Seed demo data |
+| `pnpm run db:studio` | Open Prisma Studio |
 
 ## Testing
 
 ```bash
-bun run test
-bun run test:e2e
+pnpm run test
+pnpm run test:e2e
 ```
 
 The e2e suite uses `file:./test-e2e.db` (`packages/db/prisma/test-e2e.db`) and applies the committed
@@ -297,7 +297,7 @@ tool-call loop, bounded conversation pagination, canonical skill matching, staff
 ambiguous client names.
 
 CI runs audit, migration drift checks, lint, typecheck, unit tests, e2e tests, and the production
-build on Node.js 20 with Bun 1.4.
+build on Node.js 20 with pnpm 12.16.
 
 ## LLM providers
 
@@ -318,8 +318,8 @@ application needs more than the environment-selected provider.
 
 - Set `NODE_ENV=production` and strong `API_KEY` / `BETTER_AUTH_SECRET` values.
 - Set `CORS_ORIGINS` to the deployed web origin(s) and enable credentialed CORS.
-- Apply migrations with `bun run db:migrate:deploy` before starting the API.
-- Run `bun run build`; Turborepo compiles `@workspace/db` to `packages/db/dist` so the API runs on
+- Apply migrations with `pnpm run db:migrate:deploy` before starting the API.
+- Run `pnpm run build`; Turborepo compiles `@workspace/db` to `packages/db/dist` so the API runs on
   Node.js 20 without a TypeScript loader.
 - The web app reads `NEXT_PUBLIC_API_URL` at build time for direct browser API calls.
 

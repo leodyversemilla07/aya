@@ -4,22 +4,22 @@
   "private": true,
   "scripts": {
     "build": "turbo build",
-    "audit": "bun audit --production",
-    "audit:all": "bun audit",
+    "audit": "pnpm audit --prod",
+    "audit:all": "pnpm audit",
     "dev": "turbo dev",
     "lint": "biome check .",
     "lint:fix": "biome check --write --unsafe .",
     "format": "biome format --write .",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
-    "test:e2e": "DATABASE_URL=${DATABASE_URL:-file:./test-e2e.db} bun run --cwd packages/db migrate:deploy && bun run --cwd apps/api test:e2e",
-    "db:generate": "bun run --cwd packages/db generate",
-    "db:push": "bun run --cwd packages/db push",
-    "db:migrate": "bun run --cwd packages/db migrate:dev",
-    "db:migrate:deploy": "bun run --cwd packages/db migrate:deploy",
-    "db:drift": "bun run --cwd packages/db migrate:drift",
-    "db:seed": "bun run --cwd packages/db seed",
-    "db:studio": "bun run --cwd packages/db studio"
+    "test:e2e": "DATABASE_URL=${DATABASE_URL:-file:./test-e2e.db} pnpm --filter @workspace/db run migrate:deploy && pnpm --filter @aya/api run test:e2e",
+    "db:generate": "pnpm --filter @workspace/db run generate",
+    "db:push": "pnpm --filter @workspace/db run push",
+    "db:migrate": "pnpm --filter @workspace/db run migrate:dev",
+    "db:migrate:deploy": "pnpm --filter @workspace/db run migrate:deploy",
+    "db:drift": "pnpm --filter @workspace/db run migrate:drift",
+    "db:seed": "pnpm --filter @workspace/db run seed",
+    "db:studio": "pnpm --filter @workspace/db run studio"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
@@ -27,30 +27,8 @@
     "turbo": "^2.11.10",
     "typescript": "5.9.3"
   },
-  "packageManager": "bun@1.4.4",
+  "packageManager": "pnpm@12.16.1",
   "engines": {
     "node": ">=20.9.0"
-  },
-  "workspaces": ["apps/*", "packages/*"],
-  "overrides": {
-    "@babel/core": "7.29.7",
-    "baseline-browser-mapping": "2.11.34",
-    "brace-expansion@1": "1.1.21",
-    "brace-expansion@2": "2.1.7",
-    "brace-expansion@5": "5.0.12",
-    "browserslist": "4.29.5",
-    "deepmerge-ts": "8.0.2",
-    "esbuild": "0.28.2",
-    "express": "5.3.0",
-    "fast-uri": "3.1.9",
-    "form-data": "4.0.6",
-    "handlebars": "4.7.10",
-    "js-yaml@3": "3.15.2",
-    "js-yaml@4": "4.3.2",
-    "multer": "2.5.0",
-    "nanoid": "3.3.20",
-    "postcss": "8.5.32",
-    "qs": "6.17.1",
-    "source-map-js": "1.2.2"
   }
 }

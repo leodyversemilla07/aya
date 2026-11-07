@@ -27,7 +27,7 @@ natural language conversation.
 | UI | shadcn/ui, Tailwind CSS | latest |
 | LLM | OpenAI-compatible API | — |
 | Validation | Zod | 4 |
-| Package manager | Bun | 1.4 |
+| Package manager | pnpm | 12.16 |
 | Monorepo | Turborepo | 2 |
 | Lint/format | Biome | 1.9 |
 
@@ -224,27 +224,27 @@ Business data resets on each seed. Conversations are preserved unless
 ## Development workflow
 
 ```bash
-bun install
+pnpm install
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
-bun run db:push
-bun run db:seed
-bun run dev
+pnpm run db:push
+pnpm run db:seed
+pnpm run dev
 ```
 
 Quality gates:
 
 ```bash
-bun run audit
-bun run lint
-bun run typecheck
-bun run test
-bun run test:e2e
-bun run db:drift
-bun run build
+pnpm run audit
+pnpm run lint
+pnpm run typecheck
+pnpm run test
+pnpm run test:e2e
+pnpm run db:drift
+pnpm run build
 ```
 
-CI runs the same checks on Node.js 20 with Bun 1.4.
+CI runs the same checks on Node.js 20 with pnpm 12.16.
 
 ## Success criteria
 
