@@ -13,6 +13,7 @@
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "test:e2e": "DATABASE_URL=${DATABASE_URL:-file:./test-e2e.db} pnpm --filter @workspace/db run migrate:deploy && pnpm --filter @aya/api run test:e2e",
+    "test:e2e:web": "NEXT_PUBLIC_API_URL=http://localhost:3001 pnpm run build && pnpm --filter web run test:e2e",
     "db:generate": "pnpm --filter @workspace/db run generate",
     "db:push": "pnpm --filter @workspace/db run push",
     "db:migrate": "pnpm --filter @workspace/db run migrate:dev",

@@ -271,8 +271,9 @@ pnpm run db:studio    # browse data in Prisma Studio
 | `pnpm run lint:fix` | Apply safe and unsafe Biome fixes |
 | `pnpm run format` | Format with Biome |
 | `pnpm run typecheck` | TypeScript type checking |
-| `pnpm run test` | Unit tests |
+| `pnpm run test` | API unit tests (Jest) and web unit/component tests (Vitest) |
 | `pnpm run test:e2e` | API end-to-end and tool integration tests |
+| `pnpm run test:e2e:web` | Playwright browser tests against the production build |
 | `pnpm run audit` | Audit production dependencies |
 | `pnpm run audit:all` | Audit all dependencies, including tooling |
 | `pnpm run db:generate` | Generate the Prisma client |
@@ -286,18 +287,29 @@ pnpm run db:studio    # browse data in Prisma Studio
 ## Testing
 
 ```bash
-pnpm run test
-pnpm run test:e2e
+pnpm run test          # API unit tests (Jest) + web unit/component tests (Vitest)
+pnpm run test:e2e      # API e2e tests (Jest + Supertest)
+pnpm run test:e2e:web  # browser e2e tests (Playwright)
 ```
 
-The e2e suite uses `file:./test-e2e.db` (`packages/db/prisma/test-e2e.db`) and applies the committed
+The web app uses **Vitest** with React Testing Library and jsdom for unit and component tests.
+`pnpm run test:e2e:web` builds the workspace and then runs **Playwright** against the production
+build. Playwright starts the API and web servers itself, seeds `packages/db/prisma/playwright.db`,
+and covers sign-up/sign-in, session redirects, dashboard data, chat rendering, and chat errors. The
+LLM is mocked in the browser, so no provider calls are made. Install the browser once with:
+
+```bash
+pnpm --filter web exec playwright install chromium
+```
+
+The API e2e suite uses `file:./test-e2e.db` (`packages/db/prisma/test-e2e.db`) and applies the committed
 migrations automatically, so no manual database setup is required. Tests do not call a real LLM —
 they cover public health/readiness routes, request validation, API-key enforcement, a mocked agent
 tool-call loop, bounded conversation pagination, canonical skill matching, staffing-state rules, and
 ambiguous client names.
 
-CI runs audit, migration drift checks, lint, typecheck, unit tests, e2e tests, and the production
-build on Node.js 20 with pnpm 12.16.
+CI runs audit, migration drift checks, lint, typecheck, unit tests, API e2e tests, Playwright browser
+tests, and the production build on Node.js 20 with pnpm 12.16.
 
 ## LLM providers
 

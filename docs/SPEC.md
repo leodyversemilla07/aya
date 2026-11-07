@@ -30,6 +30,7 @@ natural language conversation.
 | Package manager | pnpm | 12.16 |
 | Monorepo | Turborepo | 2 |
 | Lint/format | Biome | 1.9 |
+| Testing | Jest, Vitest, React Testing Library, Playwright | latest |
 
 ### Project structure
 
@@ -240,6 +241,7 @@ pnpm run lint
 pnpm run typecheck
 pnpm run test
 pnpm run test:e2e
+pnpm run test:e2e:web
 pnpm run db:drift
 pnpm run build
 ```

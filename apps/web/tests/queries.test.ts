@@ -1,5 +1,4 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getApiUrl } from '../lib/api';
 import { conversationQuery, conversationsQuery, queryKeys, statsQuery } from '../lib/queries';
 
@@ -13,93 +12,85 @@ function restoreApiUrl(): void {
   }
 }
 
-test('getApiUrl joins the base URL and path', () => {
-  process.env.NEXT_PUBLIC_API_URL = 'https://api.example.com/';
-  try {
-    assert.equal(getApiUrl('/conversations'), 'https://api.example.com/conversations');
-    assert.equal(getApiUrl('conversations'), 'https://api.example.com/conversations');
-  } finally {
-    restoreApiUrl();
-  }
+afterEach(() => {
+  restoreApiUrl();
+  vi.unstubAllGlobals();
 });
 
-test('getApiUrl falls back to the local API origin', () => {
-  Reflect.deleteProperty(process.env, 'NEXT_PUBLIC_API_URL');
-  try {
-    assert.equal(getApiUrl('/stats'), 'http://localhost:3001/stats');
-  } finally {
-    restoreApiUrl();
-  }
+describe('getApiUrl', () => {
+  it('joins the base URL and path', () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.example.com/';
+
+    expect(getApiUrl('/conversations')).toBe('https://api.example.com/conversations');
+    expect(getApiUrl('conversations')).toBe('https://api.example.com/conversations');
+  });
+
+  it('falls back to the local API origin', () => {
+    Reflect.deleteProperty(process.env, 'NEXT_PUBLIC_API_URL');
+
+    expect(getApiUrl('/stats')).toBe('http://localhost:3001/stats');
+  });
 });
 
-test('query keys are stable and scoped by conversation id', () => {
-  assert.deepEqual(queryKeys.conversations, ['conversations']);
-  assert.deepEqual(queryKeys.stats, ['dashboard', 'stats']);
-  assert.deepEqual(queryKeys.conversation('abc'), ['conversation', 'abc']);
-});
+describe('query definitions', () => {
+  it('uses stable keys scoped by conversation id', () => {
+    expect(queryKeys.conversations).toEqual(['conversations']);
+    expect(queryKeys.stats).toEqual(['dashboard', 'stats']);
+    expect(queryKeys.conversation('abc')).toEqual(['conversation', 'abc']);
+  });
 
-test('conversationQuery encodes ids and forwards credentials', async () => {
-  process.env.NEXT_PUBLIC_API_URL = 'https://api.example.com';
-  const originalFetch = globalThis.fetch;
-  let capturedUrl = '';
-  let capturedInit: RequestInit | undefined;
+  it('encodes conversation ids and forwards credentials', async () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.example.com';
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: 'a b', title: 'Test', messages: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
 
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    capturedUrl = input.toString();
-    capturedInit = init;
-    return new Response(JSON.stringify({ id: 'a b', title: 'Test', messages: [] }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  }) as typeof fetch;
-
-  try {
     const controller = new AbortController();
     const result = await conversationQuery('a b').queryFn({ signal: controller.signal });
 
-    assert.equal(result.id, 'a b');
-    assert.equal(capturedUrl, 'https://api.example.com/conversations/a%20b');
-    assert.equal(capturedInit?.cache, 'no-store');
-    assert.equal(capturedInit?.credentials, 'include');
-    assert.equal(capturedInit?.signal, controller.signal);
-  } finally {
-    globalThis.fetch = originalFetch;
-    restoreApiUrl();
-  }
-});
-
-test('query functions surface API error messages', async () => {
-  process.env.NEXT_PUBLIC_API_URL = 'https://api.example.com';
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify({ message: ['First', 'second'] }), {
-      status: 400,
-      headers: { 'content-type': 'application/json' },
-    })) as typeof fetch;
-
-  try {
-    await assert.rejects(
-      statsQuery().queryFn({ signal: new AbortController().signal }),
-      /First second/,
+    expect(result.id).toBe('a b');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/conversations/a%20b',
+      expect.objectContaining({
+        cache: 'no-store',
+        credentials: 'include',
+        signal: controller.signal,
+      }),
     );
-  } finally {
-    globalThis.fetch = originalFetch;
-    restoreApiUrl();
-  }
-});
+  });
 
-test('query functions fall back to a status message for non-JSON errors', async () => {
-  process.env.NEXT_PUBLIC_API_URL = 'https://api.example.com';
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async () => new Response('nope', { status: 500 })) as typeof fetch;
+  it('surfaces API error messages', async () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.example.com';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ message: ['First', 'second'] }), {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          }),
+      ),
+    );
 
-  try {
-    await assert.rejects(
+    await expect(statsQuery().queryFn({ signal: new AbortController().signal })).rejects.toThrow(
+      'First second',
+    );
+  });
+
+  it('falls back to a status message for non-JSON errors', async () => {
+    process.env.NEXT_PUBLIC_API_URL = 'https://api.example.com';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status: 500 })),
+    );
+
+    await expect(
       conversationsQuery().queryFn({ signal: new AbortController().signal }),
-      /Request failed \(500\)\./,
-    );
-  } finally {
-    globalThis.fetch = originalFetch;
-    restoreApiUrl();
-  }
+    ).rejects.toThrow('Request failed (500).');
+  });
 });

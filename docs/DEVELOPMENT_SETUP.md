@@ -144,8 +144,9 @@ packages/
 | `pnpm run lint:fix` | Apply safe and unsafe Biome fixes |
 | `pnpm run format` | Format with Biome |
 | `pnpm run typecheck` | TypeScript type checking |
-| `pnpm run test` | API and web unit tests |
+| `pnpm run test` | API unit tests (Jest) and web unit/component tests (Vitest) |
 | `pnpm run test:e2e` | API end-to-end and tool integration tests |
+| `pnpm run test:e2e:web` | Playwright browser tests against the production build |
 | `pnpm run db:generate` | Generate the Prisma client |
 | `pnpm run db:push` | Push the Prisma schema to SQLite |
 | `pnpm run db:migrate` | Create a development migration |
@@ -157,13 +158,26 @@ packages/
 ## Testing
 
 ```bash
-pnpm run test
-pnpm run test:e2e
+pnpm run test          # API unit tests (Jest) + web unit/component tests (Vitest)
+pnpm run test:e2e      # API e2e tests (Jest + Supertest)
+pnpm run test:e2e:web  # browser e2e tests (Playwright)
 ```
 
-The e2e suite uses `file:./test-e2e.db` by default
+The web app uses Vitest with React Testing Library and jsdom. Component tests live in
+`apps/web/tests`; Vitest is configured in `apps/web/vitest.config.ts`.
+
+The API e2e suite uses `file:./test-e2e.db` by default
 (`packages/db/prisma/test-e2e.db`). `pnpm run test:e2e` applies the committed migrations before
 starting the tests, so no manual database setup is required.
+
+`pnpm run test:e2e:web` builds the workspace, then runs Playwright against the production build.
+Playwright starts both servers, seeds `packages/db/prisma/playwright.db`, and tests sign-up/sign-in,
+session redirects, dashboard stats, and chat rendering with the LLM mocked. Install the browser
+once with:
+
+```bash
+pnpm --filter web exec playwright install chromium
+```
 
 The tests do not call a real LLM. They cover public health/readiness routes, request validation,
 API-key enforcement, a mocked agent tool-call loop, bounded conversation pagination, canonical
