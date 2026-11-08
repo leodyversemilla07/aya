@@ -12,9 +12,10 @@
   },
   "files": ["dist", "prisma"],
   "scripts": {
-    "build": "prisma generate && tsc -p tsconfig.json",
-    "typecheck": "prisma generate && tsc --noEmit",
+    "build": "node scripts/sync-postgres-schema.mjs && prisma generate && tsc -p tsconfig.json",
+    "typecheck": "node scripts/sync-postgres-schema.mjs && prisma generate && tsc --noEmit",
     "generate": "prisma generate",
+    "schema:postgres": "node scripts/sync-postgres-schema.mjs",
     "push": "prisma db push",
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",

@@ -6,10 +6,12 @@ import { prismaAdapter } from 'better-auth/adapters/prisma';
 const env = getAuthEnv();
 const baseURL = env.BETTER_AUTH_URL;
 const secret = env.BETTER_AUTH_SECRET || 'development-only-secret-change-me';
+const databaseUrl = process.env.DATABASE_URL ?? '';
+const provider = /^postgres(ql)?:\/\//i.test(databaseUrl) ? 'postgresql' : 'sqlite';
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, {
-    provider: 'sqlite',
+    provider,
   }),
   baseURL,
   secret,

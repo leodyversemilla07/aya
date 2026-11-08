@@ -25,6 +25,21 @@ jobs:
       SEED_FORCE: "true"
       NEXT_TELEMETRY_DISABLED: "1"
 
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: aya
+          POSTGRES_PASSWORD: aya
+          POSTGRES_DB: aya
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aya"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,6 +66,17 @@ jobs:
 
       - name: Check database migration drift
         run: pnpm run db:drift
+
+      - name: Check generated PostgreSQL schema
+        run: pnpm run db:postgres:check
+
+      - name: Verify PostgreSQL migrations
+        run: |
+          pnpm --filter @workspace/db exec prisma migrate deploy
+          pnpm --filter @workspace/db exec prisma migrate diff --from-url "$POSTGRES_URL" --to-schema-datamodel prisma/schema.postgresql.prisma --exit-code
+        env:
+          DATABASE_URL: postgresql://aya:aya@localhost:5432/aya
+          POSTGRES_URL: postgresql://aya:aya@localhost:5432/aya
 
       - name: Lint
         run: pnpm run lint
