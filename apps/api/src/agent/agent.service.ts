@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { prisma } from '@workspace/db';
 import { getServerEnv } from '@workspace/env';
-import { type LlmMessage, LlmService } from '../llm/llm.service';
+import { type LlmMessage, LlmService, type LlmTools } from '../llm/llm.service';
 import { executeTool, tools } from './tools';
 
 const MAX_ITERATIONS = 4;
@@ -37,6 +37,33 @@ interface PendingMessage {
   toolCallId?: string | null;
 }
 
+export interface AgentRunHooks {
+  onConversation?: (conversation: { id: string; title: string }) => void;
+  onStatus?: (status: string) => void;
+  onDelta?: (delta: string) => void;
+}
+
+const TOOL_STATUS_LABELS: Record<string, string> = {
+  query_roster: 'Searching the developer roster',
+  match_developers: 'Matching developers to the requirement',
+  get_utilization: 'Checking utilization',
+  check_contracts: 'Reviewing contracts',
+  get_performance: 'Reviewing performance data',
+  get_alerts: 'Scanning for risks',
+};
+
+function describeToolActivity(names: string[]): string {
+  const labels = [...new Set(names.map((name) => TOOL_STATUS_LABELS[name]).filter(Boolean))];
+  if (labels.length === 0) return 'Gathering company data…';
+  if (labels.length === 1) return `${labels[0]}…`;
+  return 'Gathering company data…';
+}
+
+function titleFromMessage(message: string): string {
+  const title = message.replace(/\s+/g, ' ').trim().slice(0, 80).trim();
+  return title || 'New conversation';
+}
+
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
@@ -48,6 +75,26 @@ export class AgentService {
     conversationId?: string,
     clientSignal?: AbortSignal,
     userId?: string,
+  ) {
+    return this.run(message, conversationId, clientSignal, userId);
+  }
+
+  async chatStream(
+    message: string,
+    conversationId: string | undefined,
+    clientSignal: AbortSignal | undefined,
+    userId: string | undefined,
+    hooks: AgentRunHooks,
+  ) {
+    return this.run(message, conversationId, clientSignal, userId, hooks);
+  }
+
+  private async run(
+    message: string,
+    conversationId?: string,
+    clientSignal?: AbortSignal,
+    userId?: string,
+    hooks?: AgentRunHooks,
   ) {
     let conversation = conversationId
       ? await prisma.conversation.findFirst({
@@ -62,11 +109,16 @@ export class AgentService {
     if (!conversation) {
       conversation = await prisma.conversation.create({
         data: {
-          title: message.slice(0, 80),
+          title: titleFromMessage(message),
           ...(userId ? { user: { connect: { id: userId } } } : {}),
         },
       });
     }
+
+    hooks?.onConversation?.({
+      id: conversation.id,
+      title: conversation.title?.replace(/\s+/g, ' ').trim() || titleFromMessage(message),
+    });
 
     // Only user/assistant messages are sent back to the model. Query just the
     // bounded history needed for the model instead of loading every stored
@@ -110,16 +162,30 @@ export class AgentService {
       },
     });
 
+    hooks?.onStatus?.('Thinking…');
+
     const deadlineSignal = AbortSignal.timeout(AGENT_TIMEOUT_MS);
     const requestSignal = clientSignal
       ? AbortSignal.any([clientSignal, deadlineSignal])
       : deadlineSignal;
 
+    const complete = (completionMessages: LlmMessage[], completionTools?: LlmTools) =>
+      hooks?.onDelta
+        ? this.llmService.chatStream(
+            completionMessages,
+            completionTools,
+            hooks.onDelta,
+            requestSignal,
+          )
+        : this.llmService.chat(completionMessages, completionTools, requestSignal);
+
     const pendingMessages: PendingMessage[] = [];
     let completionCount = 1;
-    let response = await this.llmService.chat(messages, tools, requestSignal);
+    let response = await complete(messages, tools);
 
     while (response.toolCalls.length > 0 && completionCount < MAX_COMPLETIONS - 1) {
+      hooks?.onStatus?.(describeToolActivity(response.toolCalls.map((call) => call.name)));
+
       const toolResults = await Promise.all(
         response.toolCalls.map(async (toolCall) => ({
           role: 'tool' as const,
@@ -148,7 +214,8 @@ export class AgentService {
       });
       messages.push(...toolResults);
 
-      response = await this.llmService.chat(messages, tools, requestSignal);
+      hooks?.onStatus?.('Thinking…');
+      response = await complete(messages, tools);
       completionCount++;
     }
 
@@ -162,7 +229,8 @@ export class AgentService {
           'Please provide your final answer using the tool results already gathered. Do not call any more tools.',
       });
 
-      const finalResponse = await this.llmService.chat(messages, undefined, requestSignal);
+      hooks?.onStatus?.('Writing response…');
+      const finalResponse = await complete(messages);
       response = {
         content:
           finalResponse.content.trim() ||

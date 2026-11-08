@@ -1,6 +1,16 @@
 'use client';
 
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@workspace/ui/components/alert-dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -16,20 +26,24 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@workspace/ui/components/sidebar';
-import { Copy, MessageSquare, MoreHorizontal } from 'lucide-react';
+import { Copy, MessageSquare, MoreHorizontal, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 
 export function NavProjects({
   conversations,
   activeId,
   loading,
   onSelect,
+  onDelete,
 }: {
   conversations: { id: string; title: string }[];
   activeId?: string | null;
   loading: boolean;
   onSelect: (id: string) => void;
+  onDelete: (id: string) => void | Promise<void>;
 }) {
   const { isMobile } = useSidebar();
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
@@ -78,12 +92,46 @@ export function NavProjects({
                   Copy title
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem disabled>Delete chat</DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => setPendingDelete(conversation)}
+                >
+                  <Trash2 />
+                  Delete chat
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>
         ))}
       </SidebarMenu>
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete chat?</AlertDialogTitle>
+            <AlertDialogDescription>
+              “{pendingDelete?.title}” and its messages will be permanently deleted. This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingDelete) void onDelete(pendingDelete.id);
+                setPendingDelete(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarGroup>
   );
 }

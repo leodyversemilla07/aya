@@ -5,6 +5,7 @@ import { afterEach, vi } from 'vitest';
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  window.localStorage.clear();
 });
 
 if (!window.matchMedia) {

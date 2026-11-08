@@ -43,8 +43,8 @@ days?"_ — and return ranked, explainable answers.
   developer or team.
 - **Proactive risk alerts** — surfaces bench time over 14 days, contracts expiring within 30 days
   (or recently expired), and performance concerns, ranked by severity.
-- **Multi-turn conversations** — history is persisted in SQLite and shared across the dashboard and
-  chat pages.
+- **Multi-turn conversations** — history is persisted in SQLite, streamed token by token, and shared
+  across the dashboard and chat pages. Older messages load on demand and chats can be deleted.
 - **Secure by default** — Better Auth sessions for the browser, API-key compatibility for internal
   clients, credentialed CORS, Helmet, sanitized provider errors, and per-IP rate limiting.
 
@@ -189,6 +189,7 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 | `/conversations/:id` | `GET` | Session / API key | User's conversation messages |
 | `/conversations/:id` | `DELETE` | Session / API key | Delete a user's conversation |
 | `/agent/chat` | `POST` | Session / API key | Chat with Aya |
+| `/agent/chat/stream` | `POST` | Session / API key | Stream a chat response over Server-Sent Events |
 
 ### Chat request
 
@@ -204,12 +205,37 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 unknown conversation IDs return `404`. Conversation history is bounded and supports cursor
 pagination with `?limit=100&before=<message-id>`.
 
+### Streaming chat
+
+`POST /agent/chat/stream` accepts the same body as `/agent/chat` and responds with
+`text/event-stream`. Each event carries JSON data:
+
+| Event | Data | Meaning |
+|-------|------|---------|
+| `conversation` | `{ id, title }` | Conversation created or resumed |
+| `status` | `{ message }` | Friendly progress text while tools run |
+| `delta` | `{ content }` | Incremental assistant text |
+| `done` | `{ conversationId, content }` | Final text, already persisted |
+| `error` | `{ message }` | Safe, user-facing failure message |
+
+Comment heartbeats (`: ping`) are sent every 15 seconds to keep proxies from closing idle
+connections. A client disconnect aborts the underlying LLM request. OpenAI-compatible providers
+stream true tokens; Anthropic and Google fall back to a single `delta` containing the full reply.
+
+```bash
+curl -N -X POST http://localhost:3001/agent/chat/stream \
+  -H 'content-type: application/json' \
+  -H 'x-api-key: your-key' \
+  -d '{"message":"Who is on the bench?"}'
+```
+
 ### Authentication
 
 - Browser requests use credentialed Better Auth session cookies, scoped to the signed-in user.
 - Internal clients may send `x-api-key: <key>` or `Authorization: Bearer <key>`.
 - `/`, `/health`, and `/ready` are public.
-- `/agent/chat` is rate limited to 20 requests/minute per API client IP by default.
+- `/agent/chat` and `/agent/chat/stream` are rate limited to 20 requests/minute per API client IP
+  by default.
 
 Provider errors are mapped to safe, actionable responses: authentication failures return `502`
 (check `LLM_API_KEY`), `429` means the provider rate limit was reached, timeouts return `504`, and

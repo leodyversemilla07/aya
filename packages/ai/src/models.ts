@@ -1,5 +1,6 @@
 import {
   type AiClient,
+  type AiDeltaHandler,
   type AiMessage,
   type AiProviderConfig,
   type AiRequestOptions,
@@ -22,6 +23,12 @@ export interface AiProvider {
   readonly name: string;
   readonly models: readonly AiModel[];
   complete(model: AiModel, messages: AiMessage[], options?: AiRequestOptions): Promise<AiResponse>;
+  stream?(
+    model: AiModel,
+    messages: AiMessage[],
+    options?: AiRequestOptions,
+    onDelta?: AiDeltaHandler,
+  ): Promise<AiResponse>;
 }
 
 export interface CreateModelsOptions {
@@ -49,12 +56,26 @@ export class ConfiguredProvider implements AiProvider {
   }
 
   complete(model: AiModel, messages: AiMessage[], options?: AiRequestOptions) {
+    this.assertModel(model);
+    return this.client.complete(messages, options);
+  }
+
+  stream(
+    model: AiModel,
+    messages: AiMessage[],
+    options?: AiRequestOptions,
+    onDelta?: AiDeltaHandler,
+  ) {
+    this.assertModel(model);
+    return this.client.stream(messages, options, onDelta);
+  }
+
+  private assertModel(model: AiModel): void {
     if (model.provider !== this.id || !this.models.some((candidate) => candidate.id === model.id)) {
       throw new Error(
         `Model "${model.provider}/${model.id}" is not registered with provider "${this.id}".`,
       );
     }
-    return this.client.complete(messages, options);
   }
 }
 
@@ -110,6 +131,22 @@ export class Models {
     const provider = this.getProvider(model.provider);
     if (!provider) throw new Error(`AI provider "${model.provider}" is not registered.`);
     return provider.complete(model, messages, options);
+  }
+
+  async stream(
+    model: AiModel,
+    messages: AiMessage[],
+    options?: AiRequestOptions,
+    onDelta: AiDeltaHandler = () => {},
+  ): Promise<AiResponse> {
+    const provider = this.getProvider(model.provider);
+    if (!provider) throw new Error(`AI provider "${model.provider}" is not registered.`);
+    if (!provider.stream) {
+      const response = await provider.complete(model, messages, options);
+      if (response.content) onDelta(response.content);
+      return response;
+    }
+    return provider.stream(model, messages, options, onDelta);
   }
 }
 

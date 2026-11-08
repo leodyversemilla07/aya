@@ -116,7 +116,7 @@ export class AppService {
 
       return {
         id: conversation.id,
-        title: conversation.title?.trim() || 'Untitled conversation',
+        title: conversation.title?.replace(/\s+/g, ' ').trim() || 'Untitled conversation',
         preview: previewMessage?.content.replace(/\s+/g, ' ').slice(0, 120) ?? '',
         messageCount: conversation._count.messages,
         lastMessageAt: conversation.messages[0]?.createdAt ?? conversation.updatedAt,
@@ -175,7 +175,7 @@ export class AppService {
 
     return {
       id: conversation.id,
-      title: conversation.title?.trim() || 'Untitled conversation',
+      title: conversation.title?.replace(/\s+/g, ' ').trim() || 'Untitled conversation',
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
       messages: [...page]

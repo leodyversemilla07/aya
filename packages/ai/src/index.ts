@@ -47,6 +47,8 @@ export interface AiRequestOptions {
   temperature?: number;
 }
 
+export type AiDeltaHandler = (delta: string) => void;
+
 export interface AiProviderConfig {
   provider: ProviderId;
   apiKey: string;
@@ -165,6 +167,43 @@ export function getProviderConfig(
   };
 }
 
+async function* readSseEvents(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<string, void, undefined> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let dataLines: string[] = [];
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let newline = buffer.indexOf('\n');
+      while (newline !== -1) {
+        const line = buffer.slice(0, newline).replace(/\r$/, '');
+        buffer = buffer.slice(newline + 1);
+        if (line === '') {
+          if (dataLines.length > 0) {
+            yield dataLines.join('\n');
+            dataLines = [];
+          }
+        } else if (line.startsWith('data:')) {
+          dataLines.push(line.slice(5).trimStart());
+        }
+        newline = buffer.indexOf('\n');
+      }
+    }
+    buffer += decoder.decode();
+    if (buffer.startsWith('data:')) dataLines.push(buffer.slice(5).trimStart());
+    if (dataLines.length > 0) yield dataLines.join('\n');
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 export class AiClient {
   private readonly config: Required<Pick<AiProviderConfig, 'baseUrl' | 'timeoutMs' | 'maxRetries'>>;
 
@@ -185,20 +224,81 @@ export class AiClient {
         if (!(error instanceof AiError) || !error.retryable || attempt >= this.config.maxRetries) {
           throw error;
         }
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, 500 * 2 ** attempt);
-          options.signal?.addEventListener(
-            'abort',
-            () => {
-              clearTimeout(timer);
-              reject(abortError(options.signal, this.config.timeoutMs));
-            },
-            { once: true },
-          );
-        });
+        await this.retryDelay(attempt, options.signal);
       }
     }
     throw new AiError('The AI request failed after multiple attempts.', 502);
+  }
+
+  async stream(
+    messages: AiMessage[],
+    options: AiRequestOptions = {},
+    onDelta: AiDeltaHandler = () => {},
+  ): Promise<AiResponse> {
+    let emitted = false;
+    const emit = (delta: string) => {
+      if (!delta) return;
+      emitted = true;
+      onDelta(delta);
+    };
+
+    for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+      try {
+        return await this.requestStream(messages, options, emit);
+      } catch (error) {
+        // Retrying after tokens reached the caller would duplicate output.
+        if (
+          emitted ||
+          !(error instanceof AiError) ||
+          !error.retryable ||
+          attempt >= this.config.maxRetries
+        ) {
+          throw error;
+        }
+        await this.retryDelay(attempt, options.signal);
+      }
+    }
+    throw new AiError('The AI request failed after multiple attempts.', 502);
+  }
+
+  private async retryDelay(attempt: number, signal?: AbortSignal): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, 500 * 2 ** attempt);
+      signal?.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          reject(abortError(signal, this.config.timeoutMs));
+        },
+        { once: true },
+      );
+    });
+  }
+
+  private async requestStream(
+    messages: AiMessage[],
+    options: AiRequestOptions,
+    onDelta: AiDeltaHandler,
+  ): Promise<AiResponse> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, controller.signal])
+      : controller.signal;
+
+    try {
+      if (
+        this.providerConfig.provider === 'anthropic' ||
+        this.providerConfig.provider === 'google'
+      ) {
+        const response = await this.request(messages, options);
+        onDelta(response.content);
+        return response;
+      }
+      return await this.openAiCompatibleStream(messages, options, signal, onDelta);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async request(messages: AiMessage[], options: AiRequestOptions): Promise<AiResponse> {
@@ -225,18 +325,7 @@ export class AiClient {
   ): Promise<Record<string, unknown>> {
     try {
       const response = await fetch(url, { ...init, signal });
-      if (!response.ok) {
-        await response.text();
-        const retryable = response.status === 429 || response.status >= 500;
-        throw new AiError(
-          response.status === 401 || response.status === 403
-            ? 'The AI provider rejected the configured API key.'
-            : `The AI provider returned an error (${response.status}).`,
-          response.status,
-          this.providerConfig.provider,
-          retryable,
-        );
-      }
+      await this.assertOk(response);
       return (await response.json()) as Record<string, unknown>;
     } catch (error) {
       if (error instanceof AiError) throw error;
@@ -250,11 +339,25 @@ export class AiClient {
     }
   }
 
-  private async openAiCompatible(
-    messages: AiMessage[],
-    options: AiRequestOptions,
-    signal: AbortSignal,
-  ): Promise<AiResponse> {
+  private async assertOk(response: Response): Promise<void> {
+    if (response.ok) return;
+    await response.text();
+    const retryable = response.status === 429 || response.status >= 500;
+    throw new AiError(
+      response.status === 401 || response.status === 403
+        ? 'The AI provider rejected the configured API key.'
+        : `The AI provider returned an error (${response.status}).`,
+      response.status,
+      this.providerConfig.provider,
+      retryable,
+    );
+  }
+
+  private chatCompletionsUrl(): string {
+    return `${this.config.baseUrl.replace(/\/chat\/completions$/i, '')}/chat/completions`;
+  }
+
+  private openAiBody(messages: AiMessage[], options: AiRequestOptions): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model: this.providerConfig.model,
       messages: messages.map((message) =>
@@ -288,13 +391,22 @@ export class AiClient {
       }));
       body.tool_choice = 'auto';
     }
+    return body;
+  }
+
+  private async openAiCompatible(
+    messages: AiMessage[],
+    options: AiRequestOptions,
+    signal: AbortSignal,
+  ): Promise<AiResponse> {
+    const body = this.openAiBody(messages, options);
     const headers = {
       'content-type': 'application/json',
       authorization: `Bearer ${this.providerConfig.apiKey}`,
       ...this.providerConfig.headers,
     };
     const data = await this.fetchJson(
-      `${this.config.baseUrl.replace(/\/chat\/completions$/i, '')}/chat/completions`,
+      this.chatCompletionsUrl(),
       { method: 'POST', headers, body: JSON.stringify(body) },
       signal,
     );
@@ -335,6 +447,153 @@ export class AiClient {
           | undefined,
       ),
       finishReason: choice.finish_reason,
+      provider: this.providerConfig.provider,
+      model: this.providerConfig.model,
+    };
+  }
+
+  private async openAiCompatibleStream(
+    messages: AiMessage[],
+    options: AiRequestOptions,
+    signal: AbortSignal,
+    onDelta: AiDeltaHandler,
+  ): Promise<AiResponse> {
+    const headers = {
+      'content-type': 'application/json',
+      accept: 'text/event-stream',
+      authorization: `Bearer ${this.providerConfig.apiKey}`,
+      ...this.providerConfig.headers,
+    };
+
+    let response: Response;
+    try {
+      response = await fetch(this.chatCompletionsUrl(), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...this.openAiBody(messages, options), stream: true }),
+        signal,
+      });
+      await this.assertOk(response);
+    } catch (error) {
+      if (error instanceof AiError) throw error;
+      if (signal.aborted) throw abortError(signal, this.config.timeoutMs);
+      throw new AiError(
+        `Could not reach the ${this.providerConfig.provider} AI provider.`,
+        502,
+        this.providerConfig.provider,
+        true,
+      );
+    }
+    if (!response.body) {
+      throw new AiError(
+        'The AI provider returned an empty response.',
+        502,
+        this.providerConfig.provider,
+        true,
+      );
+    }
+
+    let content = '';
+    let sawChoice = false;
+    let finishReason: string | undefined;
+    let usage: AiUsage | undefined;
+    const toolCalls: Array<{ id?: string; name?: string; arguments: string } | undefined> = [];
+
+    try {
+      for await (const data of readSseEvents(response.body)) {
+        if (data === '[DONE]') break;
+        let chunk: Record<string, unknown>;
+        try {
+          chunk = JSON.parse(data) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+
+        if (chunk.usage) {
+          usage = usageFrom(
+            chunk.usage as {
+              prompt_tokens?: number;
+              completion_tokens?: number;
+              total_tokens?: number;
+            },
+          );
+        }
+
+        const choice = (
+          chunk.choices as
+            | Array<{
+                delta?: {
+                  content?: string | null;
+                  tool_calls?: Array<{
+                    index?: number;
+                    id?: string;
+                    function?: { name?: string; arguments?: string };
+                  }>;
+                };
+                finish_reason?: string | null;
+              }>
+            | undefined
+        )?.[0];
+        if (!choice) continue;
+        sawChoice = true;
+
+        const text = typeof choice.delta?.content === 'string' ? choice.delta.content : '';
+        if (text) {
+          content += text;
+          onDelta(text);
+        }
+
+        (choice.delta?.tool_calls ?? []).forEach((call, fallbackIndex) => {
+          if (!call) return;
+          const index = typeof call.index === 'number' ? call.index : fallbackIndex;
+          let entry = toolCalls[index];
+          if (!entry) {
+            entry = { arguments: '' };
+            toolCalls[index] = entry;
+          }
+          if (call.id) entry.id = call.id;
+          if (call.function?.name) entry.name = (entry.name ?? '') + call.function.name;
+          if (typeof call.function?.arguments === 'string') {
+            entry.arguments += call.function.arguments;
+          }
+        });
+
+        if (choice.finish_reason) finishReason = choice.finish_reason;
+      }
+    } catch (error) {
+      if (error instanceof AiError) throw error;
+      if (signal.aborted) throw abortError(signal, this.config.timeoutMs);
+      throw new AiError(
+        'The AI provider stream ended unexpectedly.',
+        502,
+        this.providerConfig.provider,
+        true,
+      );
+    }
+
+    if (!sawChoice) {
+      throw new AiError(
+        'The AI provider returned an empty response.',
+        502,
+        this.providerConfig.provider,
+      );
+    }
+
+    const completedToolCalls: AiToolCall[] = [];
+    toolCalls.forEach((call, index) => {
+      if (!call?.name) return;
+      completedToolCalls.push({
+        id: call.id ?? `call_${randomUUID()}_${index}`,
+        name: call.name,
+        arguments: parseArguments(call.arguments),
+      });
+    });
+
+    return {
+      content,
+      toolCalls: completedToolCalls,
+      usage,
+      finishReason,
       provider: this.providerConfig.provider,
       model: this.providerConfig.model,
     };

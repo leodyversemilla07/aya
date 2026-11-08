@@ -9,13 +9,14 @@ import { LlmService } from '../src/llm/llm.service';
 describe('AgentController (e2e)', () => {
   let app: INestApplication<App>;
   const llmChat = jest.fn();
+  const llmChatStream = jest.fn();
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
       .overrideProvider(LlmService)
-      .useValue({ chat: llmChat })
+      .useValue({ chat: llmChat, chatStream: llmChatStream })
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -24,11 +25,14 @@ describe('AgentController (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
-    await prisma.conversation.deleteMany({ where: { title: 'Find React developers' } });
+    await prisma.conversation.deleteMany({
+      where: { title: { in: ['Find React developers', 'Stream this answer'] } },
+    });
   });
 
   beforeEach(() => {
     llmChat.mockReset();
+    llmChatStream.mockReset();
   });
 
   it('executes a tool call and persists the final answer', async () => {
@@ -73,5 +77,65 @@ describe('AgentController (e2e)', () => {
     );
 
     await prisma.conversation.delete({ where: { id: response.body.conversationId } });
+  });
+
+  it('streams status, deltas, and a final answer over SSE', async () => {
+    llmChatStream.mockImplementation(
+      async (
+        _messages: unknown,
+        _tools: unknown,
+        onDelta: (delta: string) => void,
+      ): Promise<{ content: string; toolCalls: never[] }> => {
+        onDelta('Streaming ');
+        onDelta('answer.');
+        return { content: 'Streaming answer.', toolCalls: [] };
+      },
+    );
+
+    const response = await request(app.getHttpServer())
+      .post('/agent/chat/stream')
+      .set('x-api-key', 'test-api-key')
+      .set('accept', 'text/event-stream')
+      .send({ message: 'Stream this answer' })
+      .expect(200)
+      .expect('content-type', /text\/event-stream/);
+
+    expect(response.text).toContain('event: conversation');
+    expect(response.text).toContain('event: status');
+    expect(response.text).toContain('event: delta');
+    expect(response.text).toContain('Streaming ');
+    expect(response.text).toContain('event: done');
+    expect(response.text).toContain('"conversationId"');
+
+    const doneEvent = response.text.split('\n\n').find((block) => block.includes('event: done'));
+    const dataLine = doneEvent?.split('\n').find((line) => line.startsWith('data: '));
+    const payload = JSON.parse(dataLine?.slice(6) ?? '{}') as {
+      conversationId?: string;
+      content?: string;
+    };
+    expect(payload.content).toBe('Streaming answer.');
+    expect(payload.conversationId).toEqual(expect.any(String));
+
+    const conversation = await request(app.getHttpServer())
+      .get(`/conversations/${payload.conversationId}`)
+      .set('x-api-key', 'test-api-key')
+      .expect(200);
+
+    expect(conversation.body.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'user', content: 'Stream this answer' }),
+        expect.objectContaining({ role: 'assistant', content: 'Streaming answer.' }),
+      ]),
+    );
+
+    await prisma.conversation.delete({ where: { id: payload.conversationId } });
+  });
+
+  it('rejects invalid streaming requests before opening the stream', async () => {
+    await request(app.getHttpServer())
+      .post('/agent/chat/stream')
+      .set('x-api-key', 'test-api-key')
+      .send({ message: '' })
+      .expect(400);
   });
 });

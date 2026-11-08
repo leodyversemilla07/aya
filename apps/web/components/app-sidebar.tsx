@@ -53,6 +53,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     loadConversation,
     newChat,
     sendMessage,
+    deleteConversation,
   } = useChat();
   const close = () => isMobile && setOpenMobile(false);
 
@@ -101,6 +102,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             void loadConversation(id);
             if (pathname !== '/chat') router.push('/chat');
           }}
+          onDelete={(id) => void deleteConversation(id)}
         />
       </SidebarContent>
       <SidebarFooter>

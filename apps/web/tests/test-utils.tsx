@@ -31,3 +31,23 @@ export function jsonResponse(body: unknown, init?: ResponseInit): Response {
     ...init,
   });
 }
+
+export function sseEvent(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+export function sseResponse(chunks: string[], init?: ResponseInit): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+      controller.close();
+    },
+  });
+
+  return new Response(body, {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+    ...init,
+  });
+}

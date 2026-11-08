@@ -115,6 +115,7 @@ User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Qu
 | `/conversations/:id` | GET | API key | Conversation messages |
 | `/conversations/:id` | DELETE | API key | Delete a conversation |
 | `/agent/chat` | POST | API key | Chat with Aya |
+| `/agent/chat/stream` | POST | API key | Stream a chat reply over SSE |
 
 ### Request/response
 
@@ -130,13 +131,20 @@ Validation rules: `message` is trimmed, non-empty, and at most 10,000 characters
 return HTTP 400. Unknown conversation IDs return HTTP 404. Conversation history is bounded and
 supports cursor pagination with `limit` and `before` query parameters.
 
+`POST /agent/chat/stream` accepts the same body and returns `text/event-stream`. It emits
+`conversation` (`{ id, title }`), `status` (`{ message }`), `delta` (`{ content }`), `done`
+(`{ conversationId, content }`), and `error` (`{ message }`) events, plus comment heartbeats every
+15 seconds. Disconnects abort the upstream LLM request; OpenAI-compatible providers stream real
+tokens while Anthropic and Google emit the full reply as one `delta`.
+
 ### Authentication
 
 - Send `x-api-key: <key>` or `Authorization: Bearer <key>`.
 - `API_KEY` is required in every environment; startup fails otherwise.
 - A missing or invalid key is rejected even in development and test environments.
 - `/`, `/health`, and `/ready` are public.
-- `/agent/chat` is rate limited to 20 requests per minute per API client IP by default.
+- `/agent/chat` and `/agent/chat/stream` are rate limited to 20 requests per minute per API client
+  IP by default.
 - Browser requests use credentialed CORS and Better Auth sessions; API-key authentication remains
   available for internal clients.
 
@@ -161,7 +169,9 @@ Provider errors are mapped to safe messages:
 
 The sidebar shows navigation, capability shortcuts, and recent conversation history. Chat state is
 shared through `ChatProvider`, so starting a chat from the dashboard or sidebar stays consistent
-across pages. The active conversation is remembered in `localStorage`.
+across pages. Assistant replies stream token by token with tool-status feedback, older messages load
+with cursor pagination, and conversations can be deleted after a confirmation. The active
+conversation is remembered in `localStorage`.
 
 ## Environment variables
 

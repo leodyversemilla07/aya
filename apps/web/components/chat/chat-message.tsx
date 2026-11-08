@@ -7,7 +7,13 @@ import { Bot, User } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-export function ChatMessage({ message }: { message: ChatMessageType }) {
+export function ChatMessage({
+  message,
+  streaming = false,
+}: {
+  message: ChatMessageType;
+  streaming?: boolean;
+}) {
   const isUser = message.role === 'user';
 
   return (
@@ -87,6 +93,12 @@ export function ChatMessage({ message }: { message: ChatMessageType }) {
             >
               {message.content}
             </ReactMarkdown>
+            {streaming && (
+              <span
+                className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-foreground/70 align-text-bottom"
+                aria-hidden="true"
+              />
+            )}
           </div>
         )}
       </div>
@@ -102,15 +114,15 @@ export function ChatMessage({ message }: { message: ChatMessageType }) {
   );
 }
 
-export function ChatTypingIndicator() {
+export function ChatTypingIndicator({ status }: { status?: string | null }) {
   return (
-    <output className="flex gap-3" aria-label="Aya is thinking">
+    <output className="flex gap-3" aria-label={status ?? 'Aya is thinking'}>
       <Avatar className="mt-0.5 h-8 w-8 shrink-0 border border-border">
         <AvatarFallback className="bg-primary text-xs text-primary-foreground">
           <Bot className="h-4 w-4" />
         </AvatarFallback>
       </Avatar>
-      <span className="block rounded-2xl border border-border bg-muted/60 px-4 py-3">
+      <span className="flex items-center gap-2 rounded-2xl border border-border bg-muted/60 px-4 py-3">
         <span className="flex gap-1">
           {[0, 150, 300].map((delay) => (
             <span
@@ -120,6 +132,7 @@ export function ChatTypingIndicator() {
             />
           ))}
         </span>
+        {status && <span className="text-xs text-muted-foreground">{status}</span>}
       </span>
     </output>
   );

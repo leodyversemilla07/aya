@@ -13,13 +13,24 @@ interface ChatMessagesProps {
 }
 
 export function ChatMessages({ emptyState, className }: ChatMessagesProps) {
-  const { messages, loading, historyLoading, error, clearError } = useChat();
+  const {
+    messages,
+    loading,
+    historyLoading,
+    loadingOlder,
+    hasMore,
+    status,
+    streamingContent,
+    error,
+    clearError,
+    loadOlderMessages,
+  } = useChat();
   const endRef = useRef<HTMLDivElement>(null);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: new messages and the typing indicator should scroll the view.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: new messages and streamed tokens should scroll the view.
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages, loading]);
+  }, [messages, loading, streamingContent, status]);
 
   return (
     <div
@@ -27,7 +38,7 @@ export function ChatMessages({ emptyState, className }: ChatMessagesProps) {
       role="log"
       aria-live="polite"
       aria-relevant="additions text"
-      aria-busy={loading || historyLoading}
+      aria-busy={loading || historyLoading || loadingOlder}
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4">
         {historyLoading ? (
@@ -36,13 +47,31 @@ export function ChatMessages({ emptyState, className }: ChatMessagesProps) {
           </output>
         ) : (
           <>
+            {hasMore && (
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void loadOlderMessages()}
+                  disabled={loadingOlder}
+                >
+                  {loadingOlder ? 'Loading…' : 'Load earlier messages'}
+                </Button>
+              </div>
+            )}
+
             {messages.length === 0 && emptyState}
 
             {messages.map((message, index) => (
               <ChatMessage key={message.id ?? `${message.role}-${index}`} message={message} />
             ))}
 
-            {loading && <ChatTypingIndicator />}
+            {streamingContent && (
+              <ChatMessage message={{ role: 'assistant', content: streamingContent }} streaming />
+            )}
+
+            {loading && !streamingContent && <ChatTypingIndicator status={status} />}
           </>
         )}
 

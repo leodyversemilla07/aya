@@ -64,16 +64,24 @@ Relative SQLite paths resolve from `packages/db/prisma`.
 | `/conversations/:id` | GET | API key | Conversation messages |
 | `/conversations/:id` | DELETE | API key | Delete a conversation |
 | `/agent/chat` | POST | API key | Chat with the agent |
+| `/agent/chat/stream` | POST | API key | Stream a reply over Server-Sent Events |
 
 ```bash
 curl -X POST http://localhost:3001/agent/chat \
   -H 'content-type: application/json' \
   -H 'x-api-key: your-key' \
   -d '{"message":"Who is on the bench?"}'
+
+curl -N -X POST http://localhost:3001/agent/chat/stream \
+  -H 'content-type: application/json' \
+  -H 'x-api-key: your-key' \
+  -d '{"message":"Who is on the bench?"}'
 ```
 
 `/agent/chat` accepts `{ message, conversationId? }`, validates it with Zod, and returns
-`{ conversationId, content }`. Requests are rate limited to 20 per minute by default.
+`{ conversationId, content }`. `/agent/chat/stream` accepts the same body and emits
+`conversation`, `status`, `delta`, `done`, and `error` SSE events. Both endpoints are rate limited to
+20 per minute by default.
 
 ## Agent tools
 
