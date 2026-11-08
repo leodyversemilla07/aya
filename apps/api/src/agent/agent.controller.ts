@@ -17,6 +17,7 @@ import { z } from 'zod';
 import type { AuthenticatedRequest } from '../auth/request';
 import { LlmError } from '../llm/llm.service';
 import { AgentService } from './agent.service';
+import { ChatQuotaService, type ChatQuotaSnapshot, quotaSubjectFor } from './chat-quota.service';
 
 const chatRequestSchema = z.object({
   message: z
@@ -28,6 +29,14 @@ const chatRequestSchema = z.object({
 });
 
 const HEARTBEAT_MS = 15_000;
+
+function applyQuotaHeaders(response: Response, quota: ChatQuotaSnapshot): void {
+  if (!quota.enabled) return;
+  response.setHeader('x-chat-quota-limit', String(quota.limit));
+  response.setHeader('x-chat-quota-used', String(quota.used));
+  response.setHeader('x-chat-quota-remaining', String(quota.remaining));
+  response.setHeader('x-chat-quota-reset', quota.resetsAt.toISOString());
+}
 
 function safeErrorMessage(error: unknown): string {
   if (error instanceof LlmError) return error.message;
@@ -44,7 +53,27 @@ function safeErrorMessage(error: unknown): string {
 export class AgentController {
   private readonly logger = new Logger(AgentController.name);
 
-  constructor(@Inject(AgentService) private readonly agentService: AgentService) {}
+  constructor(
+    @Inject(AgentService) private readonly agentService: AgentService,
+    @Inject(ChatQuotaService) private readonly quotaService: ChatQuotaService,
+  ) {}
+
+  private async enforceQuota(request: AuthenticatedRequest, response: Response): Promise<void> {
+    const result = await this.quotaService.consume(quotaSubjectFor(request));
+    applyQuotaHeaders(response, result.snapshot);
+
+    if (!result.allowed) {
+      const retryAfter = Math.max(
+        1,
+        Math.ceil((result.snapshot.resetsAt.getTime() - Date.now()) / 1000),
+      );
+      response.setHeader('retry-after', String(retryAfter));
+      throw new HttpException(
+        `Daily chat quota of ${result.snapshot.limit} requests reached. Try again after ${result.snapshot.resetsAt.toISOString()}.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
 
   @Post('chat')
   @HttpCode(HttpStatus.OK)
@@ -61,6 +90,8 @@ export class AgentController {
         error: 'Bad Request',
       });
     }
+
+    await this.enforceQuota(request, response);
 
     const abortController = new AbortController();
     const abort = () => abortController.abort();
@@ -94,6 +125,8 @@ export class AgentController {
         error: 'Bad Request',
       });
     }
+
+    await this.enforceQuota(request, response);
 
     response.status(HttpStatus.OK);
     response.setHeader('content-type', 'text/event-stream; charset=utf-8');
@@ -136,7 +169,7 @@ export class AgentController {
             `Streaming chat failed: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
-        send('error', { message: safeErrorMessage(error) });
+        send('error', { message: safeErrorMessage(error), requestId: request.requestId });
       }
     } finally {
       clearInterval(heartbeat);

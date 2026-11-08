@@ -207,3 +207,15 @@ model Message {
   @@index([conversationId, createdAt])
   @@index([role])
 }
+
+model ChatUsage {
+  id        String   @id @default(cuid())
+  subject   String // user:<id> or api-key
+  day       String // UTC day, YYYY-MM-DD
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([subject, day])
+  @@index([day])
+}

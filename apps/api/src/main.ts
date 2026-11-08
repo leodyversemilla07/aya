@@ -1,62 +1,10 @@
 import 'reflect-metadata';
-import {
-  type ArgumentsHost,
-  Catch,
-  type ExceptionFilter,
-  HttpException,
-  Logger,
-} from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { prisma } from '@workspace/db';
 import { getServerEnv } from '@workspace/env';
-import type { Request, Response } from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import { LlmError } from './llm/llm.service';
-
-@Catch()
-class AllExceptionsFilter implements ExceptionFilter {
-  private readonly logger = new Logger('ExceptionFilter');
-
-  catch(exception: unknown, host: ArgumentsHost) {
-    const ctx = host.switchToHttp();
-    const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
-
-    let status = 500;
-    let message = 'Internal server error';
-
-    if (exception instanceof LlmError) {
-      status = exception.status;
-      message = exception.message;
-      this.logger.error(`${request.method} ${request.url}: ${exception.message}`);
-    } else if (exception instanceof HttpException) {
-      status = exception.getStatus();
-      const exceptionResponse = exception.getResponse();
-      if (typeof exceptionResponse === 'string') {
-        message = exceptionResponse;
-      } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
-        const body = exceptionResponse as { message?: string | string[] };
-        message = Array.isArray(body.message)
-          ? body.message.join(', ')
-          : (body.message ?? exception.message);
-      }
-      if (status >= 500) message = 'Internal server error';
-    } else if (exception instanceof Error) {
-      this.logger.error(
-        `${request.method} ${request.url} failed: ${exception.message}`,
-        exception.stack,
-      );
-    }
-
-    response.status(status).json({
-      statusCode: status,
-      message,
-      path: request.url,
-      timestamp: new Date().toISOString(),
-    });
-  }
-}
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -65,13 +13,23 @@ async function bootstrap() {
 
   app.use(helmet());
   app.getHttpAdapter().getInstance().disable('x-powered-by');
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .set('trust proxy', env.TRUST_PROXY === 'true');
 
   app.enableCors({
     origin: env.CORS_ORIGINS.includes('*') ? true : env.CORS_ORIGINS,
     credentials: true,
+    exposedHeaders: [
+      'retry-after',
+      'x-chat-quota-limit',
+      'x-chat-quota-used',
+      'x-chat-quota-remaining',
+      'x-chat-quota-reset',
+      'x-request-id',
+    ],
   });
-
-  app.useGlobalFilters(new AllExceptionsFilter());
 
   if (!env.API_KEY) {
     throw new Error('API_KEY must be configured before the API can start.');

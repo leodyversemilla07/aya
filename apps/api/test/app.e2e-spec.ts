@@ -30,6 +30,33 @@ describe('AppController (e2e)', () => {
     expect(response.body).toMatchObject({ status: 'ok', service: 'aya-api' });
   });
 
+  it('/health (GET) echoes caller request IDs and generates safe ones', async () => {
+    const supplied = await request(app.getHttpServer())
+      .get('/health')
+      .set('x-request-id', 'e2e-request-123')
+      .expect(200);
+    expect(supplied.headers['x-request-id']).toBe('e2e-request-123');
+
+    const generated = await request(app.getHttpServer())
+      .get('/health')
+      .set('x-request-id', 'not a valid id')
+      .expect(200);
+    expect(generated.headers['x-request-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(generated.headers['x-request-id']).not.toBe('not a valid id');
+  });
+
+  it('returns the request ID in error responses', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/missing-route')
+      .set('x-request-id', 'e2e-error-1234')
+      .expect(404);
+
+    expect(response.headers['x-request-id']).toBe('e2e-error-1234');
+    expect(response.body.requestId).toBe('e2e-error-1234');
+  });
+
   it('/ready (GET) verifies database connectivity', async () => {
     const response = await request(app.getHttpServer()).get('/ready').expect(200);
     expect(response.body).toMatchObject({ status: 'ready', service: 'aya-api' });

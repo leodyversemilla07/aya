@@ -9,6 +9,7 @@ const serverEnvSchema = z
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
     API_KEY: z.string().trim().optional(),
     CORS_ORIGINS: z.string().optional().default('http://localhost:3000'),
+    TRUST_PROXY: z.enum(['true', 'false']).default('false'),
     LLM_PROVIDER: z
       .enum(['openai', 'openrouter', 'opencode-zen', 'anthropic', 'google', 'custom'])
       .default('opencode-zen'),
@@ -19,6 +20,7 @@ const serverEnvSchema = z
     LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
     LLM_MAX_TOKENS: z.coerce.number().int().positive().default(4096),
     AGENT_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
+    CHAT_DAILY_QUOTA: z.coerce.number().int().min(0).default(200),
     BETTER_AUTH_SECRET: z.string().trim().optional(),
     BETTER_AUTH_URL: z.string().url().default('http://localhost:3000'),
     API_URL: z.string().url().optional(),

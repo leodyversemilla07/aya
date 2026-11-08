@@ -1,11 +1,13 @@
-import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AgentModule } from './agent/agent.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ApiKeyGuard } from './auth/api-key.guard';
 import { AuthController } from './auth/auth.controller';
+import { AllExceptionsFilter } from './observability/all-exceptions.filter';
+import { requestIdMiddleware } from './observability/request-logger';
 
 @Module({
   imports: [
@@ -22,6 +24,10 @@ import { AuthController } from './auth/auth.controller';
   providers: [
     AppService,
     {
+      provide: APP_FILTER,
+      useClass: AllExceptionsFilter,
+    },
+    {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
@@ -31,4 +37,8 @@ import { AuthController } from './auth/auth.controller';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(requestIdMiddleware).forRoutes('*');
+  }
+}

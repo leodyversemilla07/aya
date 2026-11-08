@@ -21,10 +21,12 @@ describe('AgentController (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     await app.init();
+    await prisma.chatUsage.deleteMany({ where: { subject: 'api-key' } });
   });
 
   afterAll(async () => {
     await app.close();
+    await prisma.chatUsage.deleteMany({ where: { subject: 'api-key' } });
     await prisma.conversation.deleteMany({
       where: { title: { in: ['Find React developers', 'Stream this answer'] } },
     });
@@ -59,6 +61,8 @@ describe('AgentController (e2e)', () => {
       .expect(200);
 
     expect(response.body).toMatchObject({ content: 'The roster query completed.' });
+    expect(Number(response.headers['x-chat-quota-limit'])).toBeGreaterThan(0);
+    expect(Number(response.headers['x-chat-quota-used'])).toBeGreaterThanOrEqual(1);
     expect(llmChat).toHaveBeenCalledTimes(2);
 
     const secondRequestMessages = llmChat.mock.calls[1]?.[0] as Array<{ role: string }>;
