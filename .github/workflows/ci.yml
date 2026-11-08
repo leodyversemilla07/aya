@@ -130,6 +130,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build API workspace
+        run: pnpm --filter @aya/api... build
+
       - name: Check generated PostgreSQL schema
         run: pnpm run db:postgres:check
 
