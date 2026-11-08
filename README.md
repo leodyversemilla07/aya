@@ -371,9 +371,9 @@ they cover public health/readiness routes, request validation, API-key enforceme
 tool-call loop, bounded conversation pagination, canonical skill matching, staffing-state rules, and
 ambiguous client names.
 
-CI runs audit, migration drift checks, PostgreSQL schema/migration verification, lint, typecheck,
-unit tests, API e2e tests, Playwright browser tests, and the production build on Node.js 24 with
-pnpm 12.16.
+CI runs audit, migration drift checks, lint, typecheck, unit tests, SQLite and PostgreSQL-backed
+API e2e tests, Playwright browser tests, and the production build on Node.js 24 with pnpm 12.16.
+The PostgreSQL job also verifies migrations and schema drift against a clean database.
 
 ## LLM providers
 

@@ -265,8 +265,9 @@ pnpm run db:postgres:check
 pnpm run build
 ```
 
-CI runs the same checks on Node.js 24 with pnpm 12.16, plus a PostgreSQL service that applies the
-Postgres migrations and verifies there is no schema drift.
+CI runs the same checks on Node.js 24 with pnpm 12.16. A separate PostgreSQL job applies the
+Postgres migrations, verifies there is no schema drift, seeds the database, and runs the API e2e
+suite against PostgreSQL.
 
 ## Production operations
 

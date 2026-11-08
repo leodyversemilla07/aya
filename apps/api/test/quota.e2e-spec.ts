@@ -30,7 +30,9 @@ describe('Chat quota (e2e)', () => {
   afterAll(async () => {
     await app.close();
     await prisma.chatUsage.deleteMany({ where: { subject: 'api-key' } });
-    await prisma.conversation.deleteMany({ where: { title: 'Quota test question' } });
+    await prisma.conversation.deleteMany({
+      where: { title: { in: ['Quota test question', 'Concurrent quota question'] } },
+    });
 
     if (originalQuota === undefined) {
       Reflect.deleteProperty(process.env, 'CHAT_DAILY_QUOTA');
@@ -39,7 +41,8 @@ describe('Chat quota (e2e)', () => {
     }
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await prisma.chatUsage.deleteMany({ where: { subject: 'api-key' } });
     llmChat.mockReset();
     llmChatStream.mockReset();
   });
@@ -83,5 +86,34 @@ describe('Chat quota (e2e)', () => {
       where: { subject_day: { subject: 'api-key', day } },
     });
     expect(clamped?.count).toBe(1);
+  });
+
+  it('allows only one request when concurrent calls exceed the limit', async () => {
+    llmChat.mockResolvedValue({ content: 'Allowed answer', toolCalls: [] });
+
+    const responses = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        request(app.getHttpServer())
+          .post('/agent/chat')
+          .set('x-api-key', 'test-api-key')
+          .send({ message: 'Concurrent quota question' }),
+      ),
+    );
+
+    const statuses = responses.map((response) => response.status);
+    expect(statuses.filter((status) => status === 200)).toHaveLength(1);
+    expect(statuses.filter((status) => status === 429)).toHaveLength(4);
+    expect(llmChat).toHaveBeenCalledTimes(1);
+
+    for (const response of responses.filter((result) => result.status === 429)) {
+      expect(response.headers['x-chat-quota-remaining']).toBe('0');
+      expect(response.headers['retry-after']).toMatch(/^\d+$/);
+    }
+
+    const day = new Date().toISOString().slice(0, 10);
+    const usage = await prisma.chatUsage.findUnique({
+      where: { subject_day: { subject: 'api-key', day } },
+    });
+    expect(usage?.count).toBe(1);
   });
 });
