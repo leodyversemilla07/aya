@@ -22,7 +22,7 @@ natural language conversation.
 |-----------|------------|---------|
 | Backend | NestJS | 11 |
 | Frontend | Next.js | 16 |
-| Database | SQLite | 3 |
+| Database | SQLite (dev/test), PostgreSQL (production) | 3 / 17 |
 | ORM | Prisma | 6 |
 | UI | shadcn/ui, Tailwind CSS | latest |
 | LLM | OpenAI-compatible API | — |
@@ -190,6 +190,8 @@ AGENT_TIMEOUT_MS="180000"
 API_PORT="3001"
 API_KEY="long-random-string"
 CORS_ORIGINS="http://localhost:3000"
+TRUST_PROXY="false"
+CHAT_DAILY_QUOTA="200"
 ```
 
 ```env
@@ -197,11 +199,16 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 ```
 
 `NEXT_PUBLIC_API_URL` is the only browser-exposed value. API keys and authentication secrets remain
-server-only. A production deployment must configure `CORS_ORIGINS` with the web origin.
+server-only. A production deployment must configure `CORS_ORIGINS` with the web origin, and
+`DATABASE_URL` may be a PostgreSQL URL instead of a SQLite file. See
+[DEPLOYMENT.md](./DEPLOYMENT.md) for the full production checklist.
 
 ## Database schema
 
-SQLite via Prisma. Migrations live in `packages/db/prisma/migrations`.
+Prisma targets SQLite for development and tests, and PostgreSQL for production. Migrations live in
+`packages/db/prisma/migrations` and `packages/db/prisma/migrations-postgresql`; the selected
+directory follows `DATABASE_URL`. `packages/db/prisma/schema.postgresql.prisma` is generated from
+the SQLite schema and verified in CI.
 
 - **Developer** — name, email, role, seniority, bench status, skills
 - **Skill** — name, level, years of experience (unique per developer)
@@ -213,9 +220,11 @@ SQLite via Prisma. Migrations live in `packages/db/prisma/migrations`.
   developer and period)
 - **Conversation** — title, messages, timestamps
 - **Message** — role, content, optional tool-call JSON and tool-call ID
+- **ChatUsage** — subject (`user:<id>` or `api-key`), UTC day, request count (unique per subject/day)
 
 Indexes cover common filters: developer name/seniority/bench, skill name, client industry,
-assignment and contract status/end dates, performance period, and conversation/message ordering.
+assignment and contract status/end dates, performance period, conversation/message ordering, and
+daily quota lookups.
 
 ## Seed data
 
@@ -236,8 +245,7 @@ Business data resets on each seed. Conversations are preserved unless
 
 ```bash
 pnpm install
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
+cp .env.example .env
 pnpm run db:push
 pnpm run db:seed
 pnpm run dev
@@ -253,10 +261,35 @@ pnpm run test
 pnpm run test:e2e
 pnpm run test:e2e:web
 pnpm run db:drift
+pnpm run db:postgres:check
 pnpm run build
 ```
 
-CI runs the same checks on Node.js 24 with pnpm 12.16.
+CI runs the same checks on Node.js 24 with pnpm 12.16, plus a PostgreSQL service that applies the
+Postgres migrations and verifies there is no schema drift.
+
+## Production operations
+
+### Chat quotas
+
+Each `/agent/chat` or `/agent/chat/stream` call consumes one unit for `user:<id>` (session) or
+`api-key` (API key) per UTC day, persisted in `ChatUsage`. Responses include
+`x-chat-quota-limit`, `x-chat-quota-used`, `x-chat-quota-remaining`, and `x-chat-quota-reset`.
+Over-limit calls return `429` with `retry-after`; `CHAT_DAILY_QUOTA=0` disables enforcement.
+
+### Observability
+
+Every response includes `x-request-id`. Callers may supply an 8–128 character safe ID; otherwise the
+API generates a UUID. JSON error bodies and SSE `error` events include `requestId`. The API writes
+structured JSON lines for `request.completed`, `request.aborted`, and `request.failed` to stdout,
+including method, path, status, duration, and the request ID. Request bodies are never logged.
+
+### Deployment
+
+Production uses PostgreSQL. Set `DATABASE_URL` to the PostgreSQL connection string, apply the
+committed PostgreSQL migrations with `pnpm run db:migrate:deploy`, and run the built API and web
+applications as separate Node.js processes. Streaming SSE requires proxy buffering to be disabled.
+See [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## Success criteria
 
@@ -268,3 +301,6 @@ CI runs the same checks on Node.js 24 with pnpm 12.16.
 - [x] Multi-turn conversations supported
 - [x] API key kept out of browser code
 - [x] Production build works on Node.js 24
+- [x] PostgreSQL deployment with committed migrations
+- [x] Structured request logs with end-to-end request IDs
+- [x] Durable per-user daily chat quotas

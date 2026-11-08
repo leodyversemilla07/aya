@@ -4,11 +4,11 @@
 
 Aya is an AI-powered staff augmentation management agent:
 
-- **Backend**: NestJS 11 API with Prisma ORM and SQLite
+- **Backend**: NestJS 11 API with Prisma ORM
 - **Frontend**: Next.js 16 app with shadcn/ui
 - **LLM integration**: Shared `@workspace/ai` package supporting OpenAI-compatible providers,
   Anthropic, and Google Gemini
-- **Database**: SQLite for local development and the demo deployment
+- **Database**: SQLite for local development and tests; PostgreSQL for production
 - **Package manager**: pnpm 12.16
 - **Monorepo**: Turborepo
 
@@ -88,10 +88,15 @@ AGENT_TIMEOUT_MS="180000"
 API_PORT="3001"
 API_KEY="change-me-to-a-long-random-string"
 CORS_ORIGINS="http://localhost:3000"
+TRUST_PROXY="false"
+CHAT_DAILY_QUOTA="200"
 BETTER_AUTH_SECRET="replace-with-a-random-32-byte-secret"
 BETTER_AUTH_URL="http://localhost:3000"
 ```
 
+- `DATABASE_URL` may be a SQLite file or a `postgresql://` URL. The matching schema and migration
+  directory are selected automatically.
+- `CHAT_DAILY_QUOTA` caps chat requests per user/API key per UTC day (`0` disables quotas).
 - `LLM_PROVIDER`: `openai`, `openrouter`, `opencode-zen`, `anthropic`, `google`, or `custom`.
 - `LLM_BASE_URL` and `LLM_MODEL` override the provider defaults.
 - Provider factories are available from `@workspace/ai/providers/*` when an application needs
@@ -126,7 +131,7 @@ packages/
   env/              Runtime-validated server and web environment configuration
   ai/               Unified multi-provider LLM client and provider registry
   db/
-    prisma/         Schema, migrations, SQLite database
+    prisma/         Schema, SQLite and PostgreSQL migrations
     src/seed.ts     Demo data
   ui/               shadcn/ui component library
   typescript-config/
@@ -148,10 +153,12 @@ packages/
 | `pnpm run test:e2e` | API end-to-end and tool integration tests |
 | `pnpm run test:e2e:web` | Playwright browser tests against the production build |
 | `pnpm run db:generate` | Generate the Prisma client |
-| `pnpm run db:push` | Push the Prisma schema to SQLite |
+| `pnpm run db:push` | Push the Prisma schema to the local database |
 | `pnpm run db:migrate` | Create a development migration |
-| `pnpm run db:migrate:deploy` | Apply committed migrations |
-| `pnpm run db:drift` | Verify committed migrations match the Prisma schema |
+| `pnpm run db:migrate:deploy` | Apply committed migrations (SQLite or PostgreSQL) |
+| `pnpm run db:drift` | Verify committed SQLite migrations match the Prisma schema |
+| `pnpm run db:postgres:sync` | Regenerate the PostgreSQL schema from the SQLite schema |
+| `pnpm run db:postgres:check` | Fail if the generated PostgreSQL schema is stale |
 | `pnpm run db:seed` | Seed demo data |
 | `pnpm run db:studio` | Open Prisma Studio |
 

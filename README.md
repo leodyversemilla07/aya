@@ -43,8 +43,8 @@ days?"_ — and return ranked, explainable answers.
   developer or team.
 - **Proactive risk alerts** — surfaces bench time over 14 days, contracts expiring within 30 days
   (or recently expired), and performance concerns, ranked by severity.
-- **Multi-turn conversations** — history is persisted in SQLite, streamed token by token, and shared
-  across the dashboard and chat pages. Older messages load on demand and chats can be deleted.
+- **Multi-turn conversations** — history is persisted in the database, streamed token by token, and
+  shared across the dashboard and chat pages. Older messages load on demand and chats can be deleted.
 - **Secure by default** — Better Auth sessions for the browser, API-key compatibility for internal
   clients, credentialed CORS, Helmet, sanitized provider errors, and per-IP rate limiting.
 
@@ -55,7 +55,7 @@ flowchart LR
   Browser["Next.js 16 web app<br/>dashboard + chat"] -->|"credentialed Better Auth session"| API["NestJS 11 API"]
   API --> Agent["Agent loop<br/>tool calling + Zod validation"]
   Agent --> LLM["@workspace/ai<br/>multi-provider LLM client"]
-  Agent --> DB[("SQLite<br/>via Prisma 6")]
+  Agent --> DB[("SQLite / PostgreSQL<br/>via Prisma 6")]
 ```
 
 | Workspace | Description |
@@ -64,7 +64,7 @@ flowchart LR
 | `apps/web` | Next.js 16 frontend — dashboard and chat UI |
 | `packages/ai` | Unified multi-provider LLM client and provider registry |
 | `packages/auth` | Shared Better Auth configuration and session handlers |
-| `packages/db` | Shared Prisma schema, SQLite database, migrations, and seed data |
+| `packages/db` | Shared Prisma schema, SQLite/PostgreSQL migrations, and seed data |
 | `packages/env` | Runtime-validated server and web environment configuration |
 | `packages/ui` | shadcn/ui component library |
 | `packages/typescript-config` | Shared TypeScript configuration |
@@ -83,7 +83,7 @@ served by NestJS.
 
 | Layer | Technology |
 |-------|------------|
-| Backend | NestJS 11, Prisma 6, SQLite |
+| Backend | NestJS 11, Prisma 6, SQLite (development/tests) or PostgreSQL (production) |
 | Frontend | Next.js 16, React 19, shadcn/ui, Tailwind CSS, react-markdown |
 | LLM | Shared `@workspace/ai` package (OpenAI, OpenRouter, OpenCode Zen, Anthropic, Google Gemini, custom OpenAI-compatible) |
 | Validation | Zod 4 |
@@ -122,6 +122,23 @@ pnpm run db:migrate:deploy   # apply committed migrations
 pnpm run db:migrate          # create a migration during development
 ```
 
+## Production deployment
+
+Use a managed PostgreSQL database and deploy the API and web application as separate Node.js
+processes. Set the production environment variables, then install, migrate, and build:
+
+```bash
+cp .env.example .env
+# Set DATABASE_URL, API_KEY, BETTER_AUTH_SECRET, and LLM_API_KEY.
+pnpm install
+pnpm run db:migrate:deploy
+pnpm run build
+```
+
+Start `pnpm --filter @aya/api run start:prod` and `pnpm --filter web run start` on your deployment
+platform. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the PostgreSQL migration workflow, health
+checks, quotas, logging, and reverse-proxy guidance.
+
 ## Configuration
 
 All configuration lives in a single root `.env` file, loaded by the API, the web build, the Prisma
@@ -149,12 +166,14 @@ AGENT_TIMEOUT_MS="180000"
 API_PORT="3001"
 API_KEY="change-me-to-a-long-random-string"
 CORS_ORIGINS="http://localhost:3000"
+TRUST_PROXY="false"
+CHAT_DAILY_QUOTA="200"
 NEXT_PUBLIC_API_URL="http://localhost:3001"
 ```
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `DATABASE_URL` | `file:./dev.db` | Relative SQLite paths resolve from `packages/db/prisma`. |
+| `DATABASE_URL` | `file:./dev.db` | Relative SQLite paths resolve from `packages/db/prisma`. Use `postgresql://…` for PostgreSQL. |
 | `BETTER_AUTH_SECRET` | — | Required in production. Generate with `openssl rand -base64 32`. |
 | `BETTER_AUTH_URL` | `http://localhost:3000` | Public URL of the web origin. |
 | `LLM_PROVIDER` | `opencode-zen` | `openai`, `openrouter`, `opencode-zen`, `anthropic`, `google`, or `custom`. |
@@ -167,6 +186,8 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 | `API_PORT` | `3001` | API listen port. |
 | `API_KEY` | — | **Required in every environment**; startup fails without it. |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowlist. Do not use `*` with credentials. |
+| `TRUST_PROXY` | `false` | Set `true` when a trusted reverse proxy terminates TLS. |
+| `CHAT_DAILY_QUOTA` | `200` | Chat requests per user/API key per UTC day. `0` disables quotas. |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Only browser-exposed value. |
 | `SEED_FORCE` | `false` | Allow seeding when `NODE_ENV=production`. |
 | `SEED_RESET_CONVERSATIONS` | `false` | Also reset conversations when seeding. |
@@ -205,6 +226,16 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 unknown conversation IDs return `404`. Conversation history is bounded and supports cursor
 pagination with `?limit=100&before=<message-id>`.
 
+Every chat request consumes one unit of the caller's daily quota. Responses include
+`x-chat-quota-limit`, `x-chat-quota-used`, `x-chat-quota-remaining`, and `x-chat-quota-reset`
+(ISO-8601 UTC). Once the limit is reached, the API returns `429` with `retry-after` and the quota
+headers set in `.env.example`; see [Production deployment](docs/DEPLOYMENT.md).
+
+Every response includes `x-request-id`. Callers may supply their own in the same header when it is
+8–128 characters of `A-Z`, `a-z`, `0-9`, `.`, `_`, `:`, or `-`; otherwise the API generates a UUID.
+Error bodies include the same `requestId`, and the API writes one JSON completion line per request
+to stdout.
+
 ### Streaming chat
 
 `POST /agent/chat/stream` accepts the same body as `/agent/chat` and responds with
@@ -216,7 +247,7 @@ pagination with `?limit=100&before=<message-id>`.
 | `status` | `{ message }` | Friendly progress text while tools run |
 | `delta` | `{ content }` | Incremental assistant text |
 | `done` | `{ conversationId, content }` | Final text, already persisted |
-| `error` | `{ message }` | Safe, user-facing failure message |
+| `error` | `{ message, requestId }` | Safe, user-facing failure message |
 
 Comment heartbeats (`: ping`) are sent every 15 seconds to keep proxies from closing idle
 connections. A client disconnect aborts the underlying LLM request. OpenAI-compatible providers
@@ -235,7 +266,9 @@ curl -N -X POST http://localhost:3001/agent/chat/stream \
 - Internal clients may send `x-api-key: <key>` or `Authorization: Bearer <key>`.
 - `/`, `/health`, and `/ready` are public.
 - `/agent/chat` and `/agent/chat/stream` are rate limited to 20 requests/minute per API client IP
-  by default.
+  by default, and limited by `CHAT_DAILY_QUOTA` per user/API key per UTC day.
+- `x-request-id` is echoed or generated on every response; JSON failures include `requestId`.
+- In production, request completion and failure lines are emitted as structured JSON.
 
 Provider errors are mapped to safe, actionable responses: authentication failures return `502`
 (check `LLM_API_KEY`), `429` means the provider rate limit was reached, timeouts return `504`, and
@@ -258,8 +291,8 @@ Aya can call six tools autonomously:
 User query → LLM reasoning → tool call → Zod validation → database query → formatted response
 ```
 
-Tool arguments are validated with Zod before execution, and multi-turn history is persisted in
-SQLite. To keep turns bounded and predictable, tool iterations and provider completions are capped;
+Tool arguments are validated with Zod before execution, and multi-turn history is persisted in the
+database. To keep turns bounded and predictable, tool iterations and provider completions are capped;
 if a cap is reached the agent is asked for a final answer using the results already gathered. Each
 turn has a total deadline and is cancelled if the client disconnects, and only the most recent 20
 user/assistant messages (up to 40,000 characters) are replayed to the model. Tool calls and results
@@ -268,13 +301,15 @@ deterministic.
 
 ## Database
 
-SQLite via Prisma. Migrations live in `packages/db/prisma/migrations`.
+Prisma 6 targets SQLite for local development and tests, and PostgreSQL for production. The
+Prisma schema and `DATABASE_URL` select the schema and migration directory automatically; the
+generated `packages/db/prisma/schema.postgresql.prisma` is checked in and verified in CI.
 
 Core models: **Developer**, **Skill**, **Client**, **Contact**, **Assignment**, **Contract**,
-**Performance**, **Conversation**, and **Message**, plus Better Auth **User**, **Session**, and
-**Account** tables. Indexes cover common filters such as developer name/seniority/bench, skill
-name, client industry, assignment and contract status/end dates, performance period, and
-conversation/message ordering.
+**Performance**, **Conversation**, **Message**, and **ChatUsage**, plus Better Auth **User**,
+**Session**, and **Account** tables. Indexes cover common filters such as developer
+name/seniority/bench, skill name, client industry, assignment and contract status/end dates,
+performance period, conversation/message ordering, and daily quota lookups.
 
 The seed script creates a deterministic dataset relative to today's date: 6 clients, 12 developers,
 50 skills, 11 assignments, 11 contracts, and 11 performance records — including a developer on the
@@ -303,10 +338,12 @@ pnpm run db:studio    # browse data in Prisma Studio
 | `pnpm run audit` | Audit production dependencies |
 | `pnpm run audit:all` | Audit all dependencies, including tooling |
 | `pnpm run db:generate` | Generate the Prisma client |
-| `pnpm run db:push` | Push the Prisma schema to SQLite |
+| `pnpm run db:push` | Push the Prisma schema to the local database |
 | `pnpm run db:migrate` | Create a development migration |
-| `pnpm run db:migrate:deploy` | Apply committed migrations |
-| `pnpm run db:drift` | Verify committed migrations match the Prisma schema |
+| `pnpm run db:migrate:deploy` | Apply committed migrations (SQLite or PostgreSQL) |
+| `pnpm run db:drift` | Verify committed SQLite migrations match the Prisma schema |
+| `pnpm run db:postgres:sync` | Regenerate the PostgreSQL schema from the SQLite schema |
+| `pnpm run db:postgres:check` | Fail if the generated PostgreSQL schema is stale |
 | `pnpm run db:seed` | Seed demo data |
 | `pnpm run db:studio` | Open Prisma Studio |
 
@@ -334,8 +371,9 @@ they cover public health/readiness routes, request validation, API-key enforceme
 tool-call loop, bounded conversation pagination, canonical skill matching, staffing-state rules, and
 ambiguous client names.
 
-CI runs audit, migration drift checks, lint, typecheck, unit tests, API e2e tests, Playwright browser
-tests, and the production build on Node.js 24 with pnpm 12.16.
+CI runs audit, migration drift checks, PostgreSQL schema/migration verification, lint, typecheck,
+unit tests, API e2e tests, Playwright browser tests, and the production build on Node.js 24 with
+pnpm 12.16.
 
 ## LLM providers
 
@@ -356,14 +394,18 @@ application needs more than the environment-selected provider.
 
 - Set `NODE_ENV=production` and strong `API_KEY` / `BETTER_AUTH_SECRET` values.
 - Set `CORS_ORIGINS` to the deployed web origin(s) and enable credentialed CORS.
-- Apply migrations with `pnpm run db:migrate:deploy` before starting the API.
+- Use PostgreSQL in production and apply migrations with `pnpm run db:migrate:deploy` before starting
+  the API. `DATABASE_URL` selects the SQLite or PostgreSQL schema and migrations automatically.
 - Run `pnpm run build`; Turborepo compiles `@workspace/db` to `packages/db/dist` so the API runs on
   Node.js without a TypeScript loader.
 - The web app reads `NEXT_PUBLIC_API_URL` at build time for direct browser API calls.
 
-> [!WARNING]
-> SQLite is suitable for a single API instance. Move to Postgres before scaling the API
-> horizontally or running multiple replicas.
+See [Production deployment](docs/DEPLOYMENT.md) for PostgreSQL setup, quotas, structured logging,
+SSE proxy settings, and the migration workflow.
+
+> [!NOTE]
+> SQLite remains the default for local development and tests. Production deployments should use
+> PostgreSQL when running more than one API instance.
 
 ## Documentation
 

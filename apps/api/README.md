@@ -13,7 +13,7 @@ cp .env.example .env
 ```
 
 Configure `LLM_API_KEY`, `API_KEY`, and (optionally) `DATABASE_URL` in `.env`. Then create
-and seed the SQLite database:
+and seed the local database:
 
 ```bash
 pnpm run db:push
@@ -37,7 +37,7 @@ The API listens on `API_PORT` (default `3001`).
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | Yes | SQLite URL, e.g. `file:./dev.db` |
+| `DATABASE_URL` | Yes | SQLite URL (`file:./dev.db`) or PostgreSQL URL |
 | `LLM_PROVIDER` | No | `opencode-zen` (default), `openai`, `openrouter` |
 | `LLM_API_KEY` | For chat | Provider API key |
 | `LLM_BASE_URL` | No | Override the provider base URL |
@@ -49,8 +49,23 @@ The API listens on `API_PORT` (default `3001`).
 | `API_PORT` | No | HTTP port (default 3001) |
 | `API_KEY` | Yes | Shared key for `x-api-key`/Bearer auth |
 | `CORS_ORIGINS` | No | Comma-separated origin allowlist |
+| `TRUST_PROXY` | No | Set `true` behind a trusted reverse proxy |
+| `CHAT_DAILY_QUOTA` | No | Daily chat requests per user/API key (default 200, `0` disables) |
 
-Relative SQLite paths resolve from `packages/db/prisma`.
+Relative SQLite paths resolve from `packages/db/prisma`. With a PostgreSQL `DATABASE_URL`, Prisma
+uses `prisma/schema.postgresql.prisma` and `prisma/migrations-postgresql` automatically.
+
+Every response includes `x-request-id`; chat responses also expose quota headers
+(`x-chat-quota-*`). Over-limit chat requests return `429` with `retry-after`. Request completion and
+failure lines are written as structured JSON to stdout.
+
+In production, apply migrations before starting the API:
+
+```bash
+pnpm run db:migrate:deploy
+pnpm run build
+pnpm --filter @aya/api run start:prod
+```
 
 ## Endpoints
 
