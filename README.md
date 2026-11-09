@@ -1,7 +1,7 @@
 <!-- prettier-ignore -->
 <div align="center">
 
-<img src="./apps/web/app/favicon.ico" alt="" align="center" height="64" />
+<img src="./apps/web/public/brand/aya-logo.svg" alt="Aya" align="center" height="72" />
 
 # Aya
 
