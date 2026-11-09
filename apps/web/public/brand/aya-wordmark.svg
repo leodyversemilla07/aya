@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 458 222" width="458" height="222" role="img" aria-labelledby="aya-wordmark-title">
+  <title id="aya-wordmark-title">Aya</title>
+  <g transform="translate(24 134)" fill="none" stroke="#0B0B0F" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="55" cy="-55" r="55" />
+    <path d="M110 -110V0" />
+    <path d="M165 -110 205 0" />
+    <path d="M245 -110 205 0 181 64" />
+    <circle cx="355" cy="-55" r="55" />
+    <path d="M410 -110V0" />
+  </g>
+</svg>

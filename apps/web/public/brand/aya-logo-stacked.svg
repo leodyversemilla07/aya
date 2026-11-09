@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 564" width="480" height="564" role="img" aria-labelledby="aya-logo-stacked-title">
+  <title id="aya-logo-stacked-title">Aya — stacked logo</title>
+  <g transform="translate(240 161) scale(0.8) translate(-256 -249)" fill="none" stroke="#0B0B0F" stroke-width="56" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M152 392 240 176" />
+    <path d="M360 392 272 176" />
+    <path d="M197 300h118" stroke-width="44" />
+    <circle cx="256" cy="100" r="22" fill="#12B886" stroke="none" />
+  </g>
+  <g transform="translate(35 464)" fill="none" stroke="#0B0B0F" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="55" cy="-55" r="55" />
+    <path d="M110 -110V0" />
+    <path d="M165 -110 205 0" />
+    <path d="M245 -110 205 0 181 64" />
+    <circle cx="355" cy="-55" r="55" />
+    <path d="M410 -110V0" />
+  </g>
+</svg>

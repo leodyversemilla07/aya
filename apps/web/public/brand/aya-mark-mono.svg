@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" color="#0B0B0F" role="img" aria-labelledby="aya-mark-mono-title">
+  <title id="aya-mark-mono-title">Aya</title>
+  <g fill="none" stroke="currentColor" stroke-width="56" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M152 392 240 176" />
+    <path d="M360 392 272 176" />
+    <path d="M197 300h118" stroke-width="44" />
+  </g>
+  <circle cx="256" cy="100" r="22" fill="currentColor" />
+</svg>

@@ -442,3 +442,4 @@ SSE proxy settings, and the migration workflow.
 
 - [Development setup](docs/DEVELOPMENT_SETUP.md) — local environment, testing, and troubleshooting
 - [Project specification](docs/SPEC.md) — features, architecture, data model, and success criteria
+- [Brand guide](docs/BRAND.md) — logo variants, color, typography, and usage rules
