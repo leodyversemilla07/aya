@@ -5,11 +5,12 @@ test.describe('dashboard and chat', () => {
   test('renders live staffing stats and navigates to chat', async ({ page }) => {
     await signUp(page);
 
-    await expect(page.getByText('Developers', { exact: true })).toBeVisible();
-    await expect(page.getByText('On Bench', { exact: true })).toBeVisible();
-    await expect(page.getByText('Assigned', { exact: true })).toBeVisible();
-    await expect(page.getByText('Clients', { exact: true })).toBeVisible();
-    await expect(page.getByText('Active contracts:')).toBeVisible();
+    const main = page.getByRole('main');
+    await expect(main.getByText('Developers', { exact: true })).toBeVisible();
+    await expect(main.getByText('On Bench', { exact: true })).toBeVisible();
+    await expect(main.getByText('Assigned', { exact: true })).toBeVisible();
+    await expect(main.getByText('Clients', { exact: true })).toBeVisible();
+    await expect(main.getByText('Active contracts:')).toBeVisible();
 
     await page.getByRole('link', { name: 'Chat', exact: true }).click();
 

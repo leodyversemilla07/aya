@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ApiKeyGuard } from './auth/api-key.guard';
 import { AuthController } from './auth/auth.controller';
+import { ManagementModule } from './management/management.module';
 import { AllExceptionsFilter } from './observability/all-exceptions.filter';
 import { requestIdMiddleware } from './observability/request-logger';
 
@@ -19,6 +20,7 @@ import { requestIdMiddleware } from './observability/request-logger';
       },
     ]),
     AgentModule,
+    ManagementModule,
   ],
   controllers: [AppController, AuthController],
   providers: [

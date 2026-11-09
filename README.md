@@ -45,6 +45,8 @@ days?"_ — and return ranked, explainable answers.
   (or recently expired), and performance concerns, ranked by severity.
 - **Multi-turn conversations** — history is persisted in the database, streamed token by token, and
   shared across the dashboard and chat pages. Older messages load on demand and chats can be deleted.
+- **Management console** — create, edit, and delete developers, clients, contracts, assignments,
+  and performance records from dedicated pages, with search and status filters.
 - **Secure by default** — Better Auth sessions for the browser, API-key compatibility for internal
   clients, credentialed CORS, Helmet, sanitized provider errors, and per-IP rate limiting.
 
@@ -211,6 +213,16 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 | `/conversations/:id` | `DELETE` | Session / API key | Delete a user's conversation |
 | `/agent/chat` | `POST` | Session / API key | Chat with Aya |
 | `/agent/chat/stream` | `POST` | Session / API key | Stream a chat response over Server-Sent Events |
+| `/developers` | `GET`/`POST` | Session / API key | List or create developers |
+| `/developers/:id` | `GET`/`PATCH`/`DELETE` | Session / API key | Read, update, or delete a developer |
+| `/clients` | `GET`/`POST` | Session / API key | List or create clients |
+| `/clients/:id` | `GET`/`PATCH`/`DELETE` | Session / API key | Read, update, or delete a client |
+| `/contracts` | `GET`/`POST` | Session / API key | List or create contracts |
+| `/contracts/:id` | `GET`/`PATCH`/`DELETE` | Session / API key | Read, update, or delete a contract |
+| `/assignments` | `GET`/`POST` | Session / API key | List or create assignments |
+| `/assignments/:id` | `GET`/`PATCH`/`DELETE` | Session / API key | Read, update, or delete an assignment |
+| `/performance` | `GET`/`POST` | Session / API key | List or create performance records |
+| `/performance/:id` | `GET`/`PATCH`/`DELETE` | Session / API key | Read, update, or delete a performance record |
 
 ### Chat request
 
@@ -259,6 +271,24 @@ curl -N -X POST http://localhost:3001/agent/chat/stream \
   -H 'x-api-key: your-key' \
   -d '{"message":"Who is on the bench?"}'
 ```
+
+### Management endpoints
+
+The five management resources share the same shape: `GET /<resource>` returns
+`{ total, limit, offset, items }`, `POST` creates, `GET/:id` reads, `PATCH/:id` updates, and
+`DELETE/:id` deletes. Bodies are validated with Zod and dates use `YYYY-MM-DD`.
+
+| Resource | List filters |
+|----------|--------------|
+| `developers` | `search`, `seniority`, `skill`, `clientId`, `onBench` |
+| `clients` | `search`, `industry` |
+| `contracts` | `status`, `clientId`, `developerId`, `expiringWithin` |
+| `assignments` | `status`, `clientId`, `developerId`, `active` |
+| `performance` | `developerId`, `period` |
+
+All list endpoints accept `limit` (1–200) and `offset`. Updating a developer replaces the submitted
+skill list, and updating a client replaces the submitted contact list. Unique conflicts return
+`409`; invalid references and validation failures return `400`; missing records return `404`.
 
 ### Authentication
 
@@ -358,7 +388,8 @@ pnpm run test:e2e:web  # browser e2e tests (Playwright)
 The web app uses **Vitest** with React Testing Library and jsdom for unit and component tests.
 `pnpm run test:e2e:web` builds the workspace and then runs **Playwright** against the production
 build. Playwright starts the API and web servers itself, seeds `packages/db/prisma/playwright.db`,
-and covers sign-up/sign-in, session redirects, dashboard data, chat rendering, and chat errors. The
+and covers sign-up/sign-in, session redirects, dashboard data, chat rendering, chat errors, and
+management console CRUD. The
 LLM is mocked in the browser, so no provider calls are made. Install the browser once with:
 
 ```bash
@@ -368,8 +399,8 @@ pnpm --filter web exec playwright install chromium
 The API e2e suite uses `file:./test-e2e.db` (`packages/db/prisma/test-e2e.db`) and applies the committed
 migrations automatically, so no manual database setup is required. Tests do not call a real LLM —
 they cover public health/readiness routes, request validation, API-key enforcement, a mocked agent
-tool-call loop, bounded conversation pagination, canonical skill matching, staffing-state rules, and
-ambiguous client names.
+tool-call loop, bounded conversation pagination, canonical skill matching, staffing-state rules,
+ambiguous client names, and management CRUD (validation, unique conflicts, and cascade deletes).
 
 CI runs audit, migration drift checks, lint, typecheck, unit tests, SQLite and PostgreSQL-backed
 API e2e tests, Playwright browser tests, and the production build on Node.js 24 with pnpm 12.16.

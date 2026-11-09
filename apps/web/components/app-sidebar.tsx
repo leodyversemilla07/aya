@@ -12,6 +12,8 @@ import {
 import {
   AlertTriangle,
   BarChart3,
+  Briefcase,
+  Building2,
   FileText,
   Home,
   MessageSquare,
@@ -33,12 +35,17 @@ const navigation = [
   { title: 'Chat', url: '/chat', icon: MessageSquare },
 ];
 
+const management = [
+  { title: 'Developers', url: '/developers', icon: Users },
+  { title: 'Clients', url: '/clients', icon: Building2 },
+  { title: 'Assignments', url: '/assignments', icon: Briefcase },
+  { title: 'Contracts', url: '/contracts', icon: FileText },
+  { title: 'Performance', url: '/performance', icon: TrendingUp },
+];
+
 const capabilities = [
-  ['Developer Roster', Users, 'Search developers by skills or availability'],
   ['Match Talent', UserPlus, 'Find the best developers for a new project'],
   ['Utilization', BarChart3, 'What is our current utilization rate?'],
-  ['Contracts', FileText, 'Show me contract status and upcoming renewals'],
-  ['Performance', TrendingUp, 'Show team performance metrics'],
   ['Alerts', AlertTriangle, 'Show all active risk alerts'],
 ] as const;
 
@@ -83,6 +90,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           </Button>
         </div>
         <NavMain items={navigation.map((item) => ({ ...item, isActive: pathname === item.url }))} />
+        <NavMain
+          label="Manage"
+          items={management.map((item) => ({
+            ...item,
+            isActive: pathname === item.url || pathname.startsWith(`${item.url}/`),
+          }))}
+        />
         <NavMain
           label="Capabilities"
           items={capabilities.map(([title, icon, query]) => ({

@@ -40,6 +40,7 @@ apps/
     src/
       agent/        Agent controller, loop, tool handlers, tool schemas
       auth/         API-key guard and @Public decorator
+      management/   CRUD API for developers, clients, contracts, assignments, performance
       llm/          OpenAI-compatible provider client
       app.*         Root, health, stats, conversation routes
   web/
@@ -116,6 +117,16 @@ User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Qu
 | `/conversations/:id` | DELETE | API key | Delete a conversation |
 | `/agent/chat` | POST | API key | Chat with Aya |
 | `/agent/chat/stream` | POST | API key | Stream a chat reply over SSE |
+| `/developers` | GET/POST | Session / API key | List or create developers |
+| `/developers/:id` | GET/PATCH/DELETE | Session / API key | Read, update, or delete a developer |
+| `/clients` | GET/POST | Session / API key | List or create clients |
+| `/clients/:id` | GET/PATCH/DELETE | Session / API key | Read, update, or delete a client |
+| `/contracts` | GET/POST | Session / API key | List or create contracts |
+| `/contracts/:id` | GET/PATCH/DELETE | Session / API key | Read, update, or delete a contract |
+| `/assignments` | GET/POST | Session / API key | List or create assignments |
+| `/assignments/:id` | GET/PATCH/DELETE | Session / API key | Read, update, or delete an assignment |
+| `/performance` | GET/POST | Session / API key | List or create performance records |
+| `/performance/:id` | GET/PATCH/DELETE | Session / API key | Read, update, or delete a performance record |
 
 ### Request/response
 
@@ -166,6 +177,13 @@ Provider errors are mapped to safe messages:
 |-------|-------------|
 | `/` | Dashboard with live stats, quick actions, and embedded chat |
 | `/chat` | Dedicated chat interface |
+| `/developers` | Roster list with search, seniority/availability filters, and CRUD |
+| `/developers/[id]` | Developer profile with skills, assignments, contracts, and performance |
+| `/clients` | Client list with search and CRUD |
+| `/clients/[id]` | Client profile with contacts, assignments, and contracts |
+| `/contracts` | Contract list with status/expiry filters and CRUD |
+| `/assignments` | Assignment list with status/active filters and CRUD |
+| `/performance` | Performance records with developer filter and CRUD |
 
 The sidebar shows navigation, capability shortcuts, and recent conversation history. Chat state is
 shared through `ChatProvider`, so starting a chat from the dashboard or sidebar stays consistent
@@ -305,3 +323,5 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md).
 - [x] PostgreSQL deployment with committed migrations
 - [x] Structured request logs with end-to-end request IDs
 - [x] Durable per-user daily chat quotas
+- [x] Validated CRUD APIs and UI for roster, clients, contracts, assignments, and performance
+- [x] Management flows covered by API e2e and browser tests
