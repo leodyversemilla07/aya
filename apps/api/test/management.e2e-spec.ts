@@ -218,3 +218,179 @@ describe('Management CRUD (e2e)', () => {
     ids.developerId = undefined;
   });
 });
+
+describe('Management data integrity (e2e)', () => {
+  let app: INestApplication<App>;
+  const suffix = Date.now().toString(36);
+  const created: { developerId?: string; clientId?: string; assignmentId?: string } = {};
+
+  const api = () => request(app.getHttpServer());
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+
+    const client = await api()
+      .post('/clients')
+      .set('x-api-key', 'test-api-key')
+      .send({ name: `Integrity Client ${suffix}`, industry: 'integrity' })
+      .expect(201);
+    created.clientId = client.body.id;
+  });
+
+  afterAll(async () => {
+    if (created.developerId) {
+      await api().delete(`/developers/${created.developerId}`).set('x-api-key', 'test-api-key');
+    }
+    if (created.clientId) {
+      await api().delete(`/clients/${created.clientId}`).set('x-api-key', 'test-api-key');
+    }
+    await app.close();
+  });
+
+  let developerCounter = 0;
+
+  async function createDeveloper(overrides: Record<string, unknown> = {}) {
+    developerCounter += 1;
+    const response = await api()
+      .post('/developers')
+      .set('x-api-key', 'test-api-key')
+      .send({
+        name: `Integrity Developer ${suffix}-${developerCounter}`,
+        email: `integrity-${suffix}-${developerCounter}@example.com`,
+        role: 'Engineer',
+        seniority: 'mid',
+        ...overrides,
+      })
+      .expect(201);
+    return response.body;
+  }
+
+  it('rejects duplicate skills in one request', async () => {
+    const response = await api()
+      .post('/developers')
+      .set('x-api-key', 'test-api-key')
+      .send({
+        name: `Duplicate Skill ${suffix}`,
+        email: `duplicate-${suffix}@example.com`,
+        role: 'Engineer',
+        seniority: 'mid',
+        skills: [
+          { name: 'React', level: 'advanced', yearsExp: 5 },
+          { name: 'React', level: 'expert', yearsExp: 6 },
+        ],
+      })
+      .expect(400);
+
+    expect(response.body.message).toContain('Duplicate skill');
+  });
+
+  it('rejects skills that only differ by punctuation or spacing', async () => {
+    const response = await api()
+      .post('/developers')
+      .set('x-api-key', 'test-api-key')
+      .send({
+        name: `Variant Skill ${suffix}`,
+        email: `variant-${suffix}@example.com`,
+        role: 'Engineer',
+        seniority: 'mid',
+        skills: [
+          { name: 'Node.js', level: 'advanced', yearsExp: 5 },
+          { name: 'node js', level: 'expert', yearsExp: 6 },
+        ],
+      })
+      .expect(400);
+
+    expect(response.body.message).toContain('Duplicate skill');
+  });
+
+  it('keeps existing skills when an update omits them', async () => {
+    const developer = await createDeveloper({
+      skills: [{ name: 'TypeScript', level: 'expert', yearsExp: 6 }],
+    });
+
+    const updated = await api()
+      .patch(`/developers/${developer.id}`)
+      .set('x-api-key', 'test-api-key')
+      .send({ role: 'Staff Engineer' })
+      .expect(200);
+
+    expect(updated.body.role).toBe('Staff Engineer');
+    expect(updated.body.skills).toHaveLength(1);
+    expect(updated.body.skills[0].name).toBe('TypeScript');
+  });
+
+  it('follows the assignment lifecycle with the bench start date', async () => {
+    const developer = await createDeveloper();
+    created.developerId = developer.id;
+
+    // A developer without an assignment is on the bench from today.
+    expect(developer.benchSince).not.toBeNull();
+    expect(developer.onBench).toBe(true);
+
+    const assignment = await api()
+      .post('/assignments')
+      .set('x-api-key', 'test-api-key')
+      .send({
+        developerId: developer.id,
+        clientId: created.clientId,
+        projectName: 'Integrity Project',
+        startDate: '2026-01-01',
+      })
+      .expect(201);
+    created.assignmentId = assignment.body.id;
+
+    const assigned = await api()
+      .get(`/developers/${developer.id}`)
+      .set('x-api-key', 'test-api-key')
+      .expect(200);
+
+    expect(assigned.body.onBench).toBe(false);
+    expect(assigned.body.benchSince).toBeNull();
+    expect(assigned.body.currentAssignment.clientName).toBe(`Integrity Client ${suffix}`);
+
+    await api()
+      .delete(`/assignments/${assignment.body.id}`)
+      .set('x-api-key', 'test-api-key')
+      .expect(200);
+
+    const released = await api()
+      .get(`/developers/${developer.id}`)
+      .set('x-api-key', 'test-api-key')
+      .expect(200);
+
+    expect(released.body.onBench).toBe(true);
+    expect(released.body.benchSince).not.toBeNull();
+  });
+
+  it('rejects a bench start date for an assigned developer', async () => {
+    const developer = await createDeveloper({
+      name: `Assigned Developer ${suffix}`,
+    });
+
+    await api()
+      .post('/assignments')
+      .set('x-api-key', 'test-api-key')
+      .send({
+        developerId: developer.id,
+        clientId: created.clientId,
+        projectName: 'Assigned Project',
+        startDate: '2026-01-01',
+      })
+      .expect(201);
+
+    const response = await api()
+      .patch(`/developers/${developer.id}`)
+      .set('x-api-key', 'test-api-key')
+      .send({ benchSince: '2026-01-01' })
+      .expect(400);
+
+    expect(response.body.message).toContain('benchSince');
+
+    await api().delete(`/developers/${developer.id}`).set('x-api-key', 'test-api-key').expect(200);
+  });
+});

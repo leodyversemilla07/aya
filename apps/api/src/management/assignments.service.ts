@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type Prisma, prisma } from '@workspace/db';
 import type { z } from 'zod';
+import { syncBenchState } from '../domain/bench-state';
 import { occupiedAssignmentWhere, startOfToday } from '../domain/staffing';
 import { emptyToNull, rethrowPrismaError } from './management.http';
 import type {
@@ -81,18 +82,24 @@ export class AssignmentsService {
   async create(input: AssignmentCreateInput) {
     await this.ensureRelations(input.developerId, input.clientId);
     try {
-      const assignment = await prisma.assignment.create({
-        data: {
-          developerId: input.developerId,
-          clientId: input.clientId,
-          projectName: input.projectName,
-          status: input.status,
-          startDate: input.startDate,
-          endDate: input.endDate ?? null,
-          jiraBoardUrl: emptyToNull(input.jiraBoardUrl),
-          githubRepoUrl: emptyToNull(input.githubRepoUrl),
-        },
-        include: assignmentInclude,
+      const assignment = await prisma.$transaction(async (tx) => {
+        const created = await tx.assignment.create({
+          data: {
+            developerId: input.developerId,
+            clientId: input.clientId,
+            projectName: input.projectName,
+            status: input.status,
+            startDate: input.startDate,
+            endDate: input.endDate ?? null,
+            jiraBoardUrl: emptyToNull(input.jiraBoardUrl),
+            githubRepoUrl: emptyToNull(input.githubRepoUrl),
+          },
+          include: assignmentInclude,
+        });
+
+        await syncBenchState(tx, input.developerId);
+
+        return created;
       });
       return toAssignment(assignment);
     } catch (error) {
@@ -118,23 +125,34 @@ export class AssignmentsService {
     }
 
     try {
-      const assignment = await prisma.assignment.update({
-        where: { id },
-        data: {
-          ...(input.developerId !== undefined ? { developerId: input.developerId } : {}),
-          ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
-          ...(input.projectName !== undefined ? { projectName: input.projectName } : {}),
-          ...(input.status !== undefined ? { status: input.status } : {}),
-          ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
-          ...(input.endDate !== undefined ? { endDate: input.endDate } : {}),
-          ...(input.jiraBoardUrl !== undefined
-            ? { jiraBoardUrl: emptyToNull(input.jiraBoardUrl) }
-            : {}),
-          ...(input.githubRepoUrl !== undefined
-            ? { githubRepoUrl: emptyToNull(input.githubRepoUrl) }
-            : {}),
-        },
-        include: assignmentInclude,
+      const assignment = await prisma.$transaction(async (tx) => {
+        const updated = await tx.assignment.update({
+          where: { id },
+          data: {
+            ...(input.developerId !== undefined ? { developerId: input.developerId } : {}),
+            ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
+            ...(input.projectName !== undefined ? { projectName: input.projectName } : {}),
+            ...(input.status !== undefined ? { status: input.status } : {}),
+            ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
+            ...(input.endDate !== undefined ? { endDate: input.endDate } : {}),
+            ...(input.jiraBoardUrl !== undefined
+              ? { jiraBoardUrl: emptyToNull(input.jiraBoardUrl) }
+              : {}),
+            ...(input.githubRepoUrl !== undefined
+              ? { githubRepoUrl: emptyToNull(input.githubRepoUrl) }
+              : {}),
+          },
+          include: assignmentInclude,
+        });
+
+        // Reassigning an assignment moves the developer, so both the previous
+        // and the new owner need their bench state reconciled.
+        await syncBenchState(tx, updated.developerId);
+        if (existing.developerId !== updated.developerId) {
+          await syncBenchState(tx, existing.developerId);
+        }
+
+        return updated;
       });
       return toAssignment(assignment);
     } catch (error) {
@@ -143,9 +161,15 @@ export class AssignmentsService {
   }
 
   async remove(id: string) {
-    const assignment = await prisma.assignment.findUnique({ where: { id }, select: { id: true } });
+    const assignment = await prisma.assignment.findUnique({
+      where: { id },
+      select: { id: true, developerId: true },
+    });
     if (!assignment) throw new NotFoundException(`Assignment "${id}" was not found.`);
-    await prisma.assignment.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      await tx.assignment.delete({ where: { id } });
+      await syncBenchState(tx, assignment.developerId);
+    });
     return { deleted: true, id };
   }
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { findDuplicateSkillNames } from '../domain/skills';
 
 export const SENIORITIES = ['junior', 'mid', 'senior', 'lead'] as const;
 export const SKILL_LEVELS = ['beginner', 'intermediate', 'advanced', 'expert'] as const;
@@ -51,17 +52,52 @@ export const skillInputSchema = z.object({
   yearsExp: z.number().int().min(0).max(60),
 });
 
-export const developerCreateSchema = z.object({
-  name: requiredText,
-  email: z.string().trim().email('Must be a valid email').max(254),
-  role: requiredText,
-  seniority: z.enum(SENIORITIES),
-  avatarUrl: optionalUrlSchema,
-  benchSince: optionalDateSchema,
-  skills: z.array(skillInputSchema).max(50).default([]),
-});
+const skillListSchema = z.array(skillInputSchema).max(50);
 
-export const developerUpdateSchema = developerCreateSchema.partial();
+/**
+ * The agent matches skills by their canonical name, so "Node.js" and "node js"
+ * are the same skill. Rejecting those collisions here keeps a developer from
+ * accumulating duplicate rows that read as one skill.
+ */
+function rejectDuplicateSkills(
+  skills: { name: string }[] | undefined,
+  context: z.RefinementCtx,
+): void {
+  if (!skills) return;
+  for (const duplicate of findDuplicateSkillNames(skills.map((skill) => skill.name))) {
+    context.addIssue({
+      code: 'custom',
+      message: `Duplicate skill "${duplicate}".`,
+      path: ['skills'],
+    });
+  }
+}
+
+export const developerCreateSchema = z
+  .object({
+    name: requiredText,
+    email: z.string().trim().email('Must be a valid email').max(254),
+    role: requiredText,
+    seniority: z.enum(SENIORITIES),
+    avatarUrl: optionalUrlSchema,
+    benchSince: optionalDateSchema,
+    skills: skillListSchema.default([]),
+  })
+  .superRefine((value, context) => rejectDuplicateSkills(value.skills, context));
+
+export const developerUpdateSchema = z
+  .object({
+    name: requiredText.optional(),
+    email: z.string().trim().email('Must be a valid email').max(254).optional(),
+    role: requiredText.optional(),
+    seniority: z.enum(SENIORITIES).optional(),
+    avatarUrl: optionalUrlSchema,
+    benchSince: optionalDateSchema,
+    // Deliberately not derived from the create schema: a default here would
+    // replace the developer's skills on every partial update.
+    skills: skillListSchema.optional(),
+  })
+  .superRefine((value, context) => rejectDuplicateSkills(value.skills, context));
 
 export const developerListQuerySchema = paginationSchema.extend({
   search: z.string().trim().max(120).optional(),

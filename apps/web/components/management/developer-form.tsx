@@ -1,6 +1,7 @@
 'use client';
 
 import { apiRequest } from '@/lib/api';
+import { findDuplicateSkillNames } from '@/lib/skills';
 import type { DeveloperSummary, SkillRecord } from '@/lib/types';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@workspace/ui/components/button';
@@ -29,7 +30,7 @@ const LEVELS = ['beginner', 'intermediate', 'advanced', 'expert'] as const;
 
 type EditableDeveloper = Pick<
   DeveloperSummary,
-  'id' | 'name' | 'email' | 'role' | 'seniority' | 'avatarUrl' | 'benchSince' | 'skills'
+  'id' | 'name' | 'email' | 'role' | 'seniority' | 'avatarUrl' | 'benchSince' | 'skills' | 'onBench'
 >;
 
 type SkillRow = { key: string; name: string; level: string; yearsExp: string };
@@ -88,6 +89,10 @@ function DeveloperForm({
   const [skills, setSkills] = useState<SkillRow[]>(skillRows(developer?.skills ?? []));
   const [error, setError] = useState<string | null>(null);
 
+  // A developer holding an assignment is not on the bench, so the bench start
+  // date only applies while they are unassigned.
+  const assigned = developer ? !developer.onBench : false;
+
   const mutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       developer
@@ -108,23 +113,30 @@ function DeveloperForm({
     setSkills((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   };
 
+  const namedSkills = skills.filter((row) => row.name.trim());
+  const duplicateSkills = findDuplicateSkillNames(namedSkills.map((row) => row.name));
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
+
+    if (duplicateSkills.length > 0) {
+      setError(`Duplicate skill "${duplicateSkills[0]}".`);
+      return;
+    }
+
     const payload = {
       name: name.trim(),
       email: email.trim(),
       role: role.trim(),
       seniority,
       avatarUrl: avatarUrl.trim() || null,
-      benchSince: benchSince || null,
-      skills: skills
-        .filter((row) => row.name.trim())
-        .map((row) => ({
-          name: row.name.trim(),
-          level: row.level,
-          yearsExp: Number(row.yearsExp) || 0,
-        })),
+      benchSince: assigned ? null : benchSince || null,
+      skills: namedSkills.map((row) => ({
+        name: row.name.trim(),
+        level: row.level,
+        yearsExp: Number(row.yearsExp) || 0,
+      })),
     };
     mutation.mutate(payload);
   };
@@ -182,11 +194,20 @@ function DeveloperForm({
             onChange={(event) => setAvatarUrl(event.target.value)}
           />
         </Field>
-        <Field label="Bench since" htmlFor="developer-bench" hint="Leave empty if assigned.">
+        <Field
+          label="Bench since"
+          htmlFor="developer-bench"
+          hint={
+            assigned
+              ? 'Unavailable while the developer holds an assignment.'
+              : 'When their current bench period started.'
+          }
+        >
           <Input
             id="developer-bench"
             type="date"
-            value={benchSince}
+            value={assigned ? '' : benchSince}
+            disabled={assigned}
             onChange={(event) => setBenchSince(event.target.value)}
           />
         </Field>
@@ -219,6 +240,12 @@ function DeveloperForm({
           <p className="text-xs text-muted-foreground">No skills yet. Add at least one.</p>
         ) : (
           <div className="space-y-2">
+            {duplicateSkills.length > 0 ? (
+              <p className="text-xs text-destructive">
+                Duplicate skill &quot;{duplicateSkills[0]}&quot;. Each skill can only be listed
+                once.
+              </p>
+            ) : null}
             {skills.map((skill) => (
               <div key={skill.key} className="flex items-end gap-2">
                 <Field label="Skill" className="flex-1">
@@ -274,7 +301,7 @@ function DeveloperForm({
         <Button type="button" variant="outline" onClick={onDone} disabled={mutation.isPending}>
           Cancel
         </Button>
-        <Button type="submit" disabled={mutation.isPending}>
+        <Button type="submit" disabled={mutation.isPending || duplicateSkills.length > 0}>
           {mutation.isPending ? 'Saving…' : developer ? 'Save changes' : 'Create developer'}
         </Button>
       </DialogFooter>

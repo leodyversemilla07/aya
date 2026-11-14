@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { type Prisma, prisma } from '@workspace/db';
 import type { z } from 'zod';
+import { syncBenchState } from '../domain/bench-state';
 import { occupiedAssignmentWhere, startOfToday } from '../domain/staffing';
 import { contractInclude, toContract } from './contracts.mapper';
 import { emptyToNull, rethrowPrismaError } from './management.http';
@@ -152,7 +153,25 @@ export class ClientsService {
 
   async remove(id: string) {
     await this.ensureExists(id);
-    await prisma.client.delete({ where: { id } });
+
+    // Deleting a client cascades to its assignments, so the affected
+    // developers need their bench state reconciled.
+    const affectedDevelopers = await prisma.assignment.findMany({
+      where: { clientId: id },
+      select: { developerId: true },
+    });
+
+    const affectedDeveloperIds = [
+      ...new Set(affectedDevelopers.map((assignment) => assignment.developerId)),
+    ];
+
+    await prisma.$transaction(async (tx) => {
+      await tx.client.delete({ where: { id } });
+      for (const developerId of affectedDeveloperIds) {
+        await syncBenchState(tx, developerId);
+      }
+    });
+
     return { deleted: true, id };
   }
 

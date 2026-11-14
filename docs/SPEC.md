@@ -128,6 +128,15 @@ User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Qu
 | `/performance` | GET/POST | Session / API key | List or create performance records |
 | `/performance/:id` | GET/PATCH/DELETE | Session / API key | Read, update, or delete a performance record |
 
+### Management rules
+
+- Skill names are canonical. `Node.js`, `node js`, and `NodeJS` are one skill, so a request that
+  lists the same skill twice — even with different punctuation or spacing — is rejected with `400`.
+- A partial update only touches the fields it sends. Omitting `skills` keeps the stored skills.
+- `benchSince` marks the start of a developer's current bench period. It is cleared when the
+  developer is assigned and set when they are released, so it always matches the assignment
+  lifecycle. Setting a bench start date for a developer who holds an assignment returns `400`.
+
 ### Request/response
 
 ```ts

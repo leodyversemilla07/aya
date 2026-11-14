@@ -118,7 +118,13 @@ export function DeveloperDetailPage({ id }: { id: string }) {
             <CardTitle>Availability</CardTitle>
           </CardHeader>
           <CardContent className="text-muted-foreground">
-            {data.benchSince ? `On bench since ${formatDate(data.benchSince)}` : 'Assigned'}
+            {data.onBench
+              ? data.benchSince
+                ? `On bench since ${formatDate(data.benchSince)}`
+                : 'On bench'
+              : data.currentAssignment
+                ? `Assigned to ${data.currentAssignment.clientName}`
+                : 'Assigned'}
           </CardContent>
         </Card>
         <Card size="sm">

@@ -47,6 +47,27 @@ test.describe('management console', () => {
     await expect(page.getByRole('link', { name, exact: true })).toHaveCount(0);
   });
 
+  test('blocks skills that only differ by punctuation or spacing', async ({ page }) => {
+    await signUp(page);
+
+    await page.getByRole('link', { name: 'Developers', exact: true }).click();
+    await page.getByRole('button', { name: 'Add developer' }).click();
+
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('Name').fill(`Duplicate Skill ${suffix}`);
+    await dialog.getByLabel('Email').fill(`duplicate-${suffix}@example.com`);
+    await dialog.getByLabel('Role').fill('Frontend Engineer');
+
+    await dialog.getByRole('button', { name: 'Add skill' }).click();
+    await dialog.getByPlaceholder('React').fill('Node.js');
+    await dialog.getByRole('button', { name: 'Add skill' }).click();
+    await dialog.getByPlaceholder('React').nth(1).fill('node js');
+
+    await expect(dialog.getByText(/Duplicate skill/)).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Create developer' })).toBeDisabled();
+  });
+
   test('lists clients and contracts', async ({ page }) => {
     await signUp(page);
 

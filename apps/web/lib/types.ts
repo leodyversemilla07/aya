@@ -157,6 +157,14 @@ export interface DeveloperDetail {
   seniority: string;
   avatarUrl: string | null;
   benchSince: string | null;
+  onBench: boolean;
+  currentAssignment: {
+    id: string;
+    projectName: string;
+    clientId: string;
+    clientName: string;
+    endDate: string | null;
+  } | null;
   skills: SkillRecord[];
   assignments: AssignmentRecord[];
   contracts: ContractRecord[];

@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type Prisma, prisma } from '@workspace/db';
 import type { z } from 'zod';
-import { occupiedAssignmentWhere, startOfToday } from '../domain/staffing';
+import { isCurrentlyAssigned, syncBenchState } from '../domain/bench-state';
+import { isOccupiedAssignment, occupiedAssignmentWhere, startOfToday } from '../domain/staffing';
 import { contractInclude, toContract } from './contracts.mapper';
 import { emptyToNull, rethrowPrismaError } from './management.http';
 import type {
@@ -125,9 +126,24 @@ export class DevelopersService {
       include: developerDetailInclude,
     });
     if (!developer) throw new NotFoundException(`Developer "${id}" was not found.`);
+
+    const today = startOfToday();
+    const currentAssignment =
+      developer.assignments.find((assignment) => isOccupiedAssignment(assignment, today)) ?? null;
+
     return {
       ...developer,
       contracts: developer.contracts.map(toContract),
+      onBench: currentAssignment === null,
+      currentAssignment: currentAssignment
+        ? {
+            id: currentAssignment.id,
+            projectName: currentAssignment.projectName,
+            clientId: currentAssignment.client.id,
+            clientName: currentAssignment.client.name,
+            endDate: currentAssignment.endDate,
+          }
+        : null,
     };
   }
 
@@ -140,7 +156,9 @@ export class DevelopersService {
           role: input.role,
           seniority: input.seniority,
           avatarUrl: emptyToNull(input.avatarUrl),
-          benchSince: input.benchSince ?? null,
+          // A new developer has no assignment, so their bench period starts now
+          // unless an earlier start date is supplied.
+          benchSince: input.benchSince ?? startOfToday(),
           skills: {
             create: input.skills.map((skill) => ({
               name: skill.name,
@@ -165,7 +183,14 @@ export class DevelopersService {
     if (input.role !== undefined) data.role = input.role;
     if (input.seniority !== undefined) data.seniority = input.seniority;
     if (input.avatarUrl !== undefined) data.avatarUrl = emptyToNull(input.avatarUrl);
-    if (input.benchSince !== undefined) data.benchSince = input.benchSince;
+    if (input.benchSince !== undefined) {
+      if (input.benchSince !== null && (await isCurrentlyAssigned(prisma, id))) {
+        throw new BadRequestException(
+          'benchSince cannot be set while the developer holds an active assignment.',
+        );
+      }
+      data.benchSince = input.benchSince;
+    }
 
     try {
       await prisma.$transaction(async (tx) => {
@@ -185,6 +210,8 @@ export class DevelopersService {
             });
           }
         }
+        // Keep the bench period aligned with the developer's staffing state.
+        await syncBenchState(tx, id);
       });
     } catch (error) {
       rethrowPrismaError(error, 'Developer');

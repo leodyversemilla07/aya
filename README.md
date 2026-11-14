@@ -287,8 +287,20 @@ The five management resources share the same shape: `GET /<resource>` returns
 | `performance` | `developerId`, `period` |
 
 All list endpoints accept `limit` (1–200) and `offset`. Updating a developer replaces the submitted
-skill list, and updating a client replaces the submitted contact list. Unique conflicts return
-`409`; invalid references and validation failures return `400`; missing records return `404`.
+skill list, and updating a client replaces the submitted contact list. Omitting `skills` or `contacts`
+from an update leaves the stored list untouched. Unique conflicts return `409`; invalid references and
+validation failures return `400`; missing records return `404`.
+
+Two rules keep the management console and the agent in agreement:
+
+- **Skills are canonical.** The agent matches skills by canonical name, so `Node.js`, `node js`, and
+  `NodeJS` are the same skill. A request that lists the same skill twice — even with different
+  punctuation or spacing — is rejected with `400` instead of storing duplicate rows.
+- **Bench state follows the assignment lifecycle.** `benchSince` marks the start of a developer's
+  current bench period, so it is cleared when a developer is assigned and set when they are released.
+  The dashboard, the roster tool, and the risk alerts all read it, so it is reconciled whenever
+  assignments are created, updated, or deleted. Setting a bench start date for a developer who holds
+  an assignment returns `400`.
 
 ### Authentication
 
@@ -400,7 +412,8 @@ The API e2e suite uses `file:./test-e2e.db` (`packages/db/prisma/test-e2e.db`) a
 migrations automatically, so no manual database setup is required. Tests do not call a real LLM —
 they cover public health/readiness routes, request validation, API-key enforcement, a mocked agent
 tool-call loop, bounded conversation pagination, canonical skill matching, staffing-state rules,
-ambiguous client names, and management CRUD (validation, unique conflicts, and cascade deletes).
+ambiguous client names, and management CRUD (validation, unique conflicts, cascade deletes, skill
+canonicalization, and bench-state reconciliation).
 
 CI runs audit, migration drift checks, lint, typecheck, unit tests, SQLite and PostgreSQL-backed
 API e2e tests, Playwright browser tests, and the production build on Node.js 24 with pnpm 12.16.

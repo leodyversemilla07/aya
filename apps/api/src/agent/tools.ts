@@ -1,5 +1,6 @@
 import { type Prisma, prisma } from '@workspace/db';
 import { z } from 'zod';
+import { canonicalizeSkillName, skillNamesMatch } from '../domain/skills';
 import {
   OCCUPIED_ASSIGNMENT_STATUSES,
   addDays,
@@ -8,7 +9,6 @@ import {
   occupiedAssignmentWhere,
   startOfToday,
 } from '../domain/staffing';
-import { canonicalizeSkillName, skillNamesMatch } from './skills';
 
 // ─── Helpers ──────────────────────────────────────────
 
