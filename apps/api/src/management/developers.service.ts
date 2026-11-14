@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { type Prisma, prisma } from '@workspace/db';
+import { type Prisma, containsIgnoreCase, prisma } from '@workspace/db';
 import type { z } from 'zod';
 import { isCurrentlyAssigned, syncBenchState } from '../domain/bench-state';
 import { isOccupiedAssignment, occupiedAssignmentWhere, startOfToday } from '../domain/staffing';
@@ -42,15 +42,15 @@ export class DevelopersService {
     if (query.search) {
       and.push({
         OR: [
-          { name: { contains: query.search } },
-          { email: { contains: query.search } },
-          { role: { contains: query.search } },
+          { name: containsIgnoreCase(query.search) },
+          { email: containsIgnoreCase(query.search) },
+          { role: containsIgnoreCase(query.search) },
         ],
       });
     }
     if (query.seniority) where.seniority = query.seniority;
     if (query.skill) {
-      and.push({ skills: { some: { name: { contains: query.skill } } } });
+      and.push({ skills: { some: { name: containsIgnoreCase(query.skill) } } });
     }
     if (query.clientId) {
       and.push({ assignments: { some: { ...activeAssignment, clientId: query.clientId } } });

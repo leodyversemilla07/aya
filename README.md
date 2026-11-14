@@ -291,6 +291,10 @@ skill list, and updating a client replaces the submitted contact list. Omitting 
 from an update leaves the stored list untouched. Unique conflicts return `409`; invalid references and
 validation failures return `400`; missing records return `404`.
 
+Text filters ignore case on both SQLite and PostgreSQL. SQLite's `LIKE` is already case-insensitive
+while PostgreSQL needs `ILIKE`, so the API builds the filter for the database in use and both
+databases return the same rows.
+
 Two rules keep the management console and the agent in agreement:
 
 - **Skills are canonical.** The agent matches skills by canonical name, so `Node.js`, `node js`, and
@@ -301,6 +305,10 @@ Two rules keep the management console and the agent in agreement:
   The dashboard, the roster tool, and the risk alerts all read it, so it is reconciled whenever
   assignments are created, updated, or deleted. Setting a bench start date for a developer who holds
   an assignment returns `400`.
+
+An expiry window (`expiringWithin`) only covers contracts that have already started, so a contract
+that begins next month is never reported as expiring this month. The dashboard and the risk alerts
+use the same rule.
 
 ### Authentication
 

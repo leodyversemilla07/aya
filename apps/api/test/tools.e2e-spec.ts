@@ -9,6 +9,8 @@ describe('staffing tools (e2e)', () => {
   const suffix = Date.now().toString(36);
   const alphaClientName = `Alpha Bank ${suffix}`;
   const betaClientName = `Beta Bank ${suffix}`;
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
   let alphaClientId = '';
   let betaClientId = '';
 
@@ -21,9 +23,6 @@ describe('staffing tools (e2e)', () => {
     });
     alphaClientId = alphaClient.id;
     betaClientId = betaClient.id;
-
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
 
     const endingDeveloper = await prisma.developer.create({
       data: {
@@ -82,6 +81,26 @@ describe('staffing tools (e2e)', () => {
             { name: 'TypeScript', level: 'expert', yearsExp: 5 },
           ],
         },
+        assignments: {
+          create: {
+            clientId: alphaClientId,
+            projectName: 'Second assignment',
+            status: 'active',
+            startDate: new Date(today.getTime() - 30 * DAY_MS),
+            endDate: null,
+          },
+        },
+      },
+    });
+
+    await prisma.contract.create({
+      data: {
+        developerId: endingDeveloper.id,
+        clientId: alphaClientId,
+        startDate: new Date(today.getTime() - 60 * DAY_MS),
+        endDate: new Date(today.getTime() + 10 * DAY_MS),
+        billingRate: 9000,
+        status: 'active',
       },
     });
 
@@ -139,5 +158,102 @@ describe('staffing tools (e2e)', () => {
     expect(result).toEqual({
       error: expect.stringContaining('Multiple clients matched'),
     });
+  });
+
+  it('resolves client names regardless of casing', async () => {
+    const result = (await executeTool('check_contracts', {
+      clientName: 'alpha bank',
+    })) as ToolRow[];
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.client).toBe(alphaClientName);
+  });
+
+  it('excludes contracts that have not started from an expiry window', async () => {
+    const futureClient = await prisma.client.create({
+      data: { name: `Future Client ${suffix}`, industry: 'banking' },
+    });
+
+    const futureDeveloper = await prisma.developer.create({
+      data: {
+        name: `Future Developer ${suffix}`,
+        email: `future.${suffix}@example.test`,
+        role: 'Software Engineer',
+        seniority: 'mid',
+      },
+    });
+
+    try {
+      await prisma.contract.create({
+        data: {
+          developerId: futureDeveloper.id,
+          clientId: futureClient.id,
+          startDate: new Date(today.getTime() + 5 * DAY_MS),
+          endDate: new Date(today.getTime() + 10 * DAY_MS),
+          billingRate: 5000,
+          status: 'active',
+        },
+      });
+
+      const result = (await executeTool('check_contracts', {
+        expiringWithin: 30,
+      })) as ToolRow[];
+
+      expect(result.map((contract) => contract.client)).not.toContain(futureClient.name);
+    } finally {
+      await prisma.developer.delete({ where: { id: futureDeveloper.id } });
+      await prisma.client.delete({ where: { id: futureClient.id } });
+    }
+  });
+
+  it('counts a developer once per client in the utilization breakdown', async () => {
+    const soloClient = await prisma.client.create({
+      data: { name: `Solo Client ${suffix}`, industry: 'retail' },
+    });
+
+    const soloDeveloper = await prisma.developer.create({
+      data: {
+        name: `Solo Developer ${suffix}`,
+        email: `solo.${suffix}@example.test`,
+        role: 'Software Engineer',
+        seniority: 'mid',
+        assignments: {
+          create: [
+            {
+              clientId: soloClient.id,
+              projectName: 'Solo Project A',
+              status: 'active',
+              startDate: new Date(today.getTime() - 30 * DAY_MS),
+              endDate: null,
+            },
+            {
+              clientId: soloClient.id,
+              projectName: 'Solo Project B',
+              status: 'active',
+              startDate: new Date(today.getTime() - 10 * DAY_MS),
+              endDate: null,
+            },
+          ],
+        },
+      },
+    });
+
+    try {
+      const result = (await executeTool('get_utilization', {
+        clientId: soloClient.id,
+      })) as ToolRow & {
+        total: number;
+        active: number;
+        byClient: Record<string, number>;
+      };
+
+      expect(result.total).toBe(1);
+      expect(result.active).toBe(1);
+      expect(result.byClient[soloClient.name]).toBe(1);
+    } finally {
+      await prisma.developer.delete({ where: { id: soloDeveloper.id } });
+      await prisma.client.delete({ where: { id: soloClient.id } });
+    }
   });
 });

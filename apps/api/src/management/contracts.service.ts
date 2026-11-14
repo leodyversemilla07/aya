@@ -25,6 +25,9 @@ export class ContractsService {
     if (query.developerId) where.developerId = query.developerId;
     if (query.expiringWithin !== undefined) {
       if (!where.status) where.status = { in: ['active', 'renewing'] };
+      // Contracts that have not started yet are not expiring, so the window
+      // only covers contracts that are already running.
+      where.startDate = { lte: today };
       where.endDate = { gte: today, lte: addDays(today, query.expiringWithin) };
     }
 

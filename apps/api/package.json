@@ -61,6 +61,7 @@
     "moduleNameMapper": {
       "^@workspace/db$": "<rootDir>/../../../packages/db/src/index.ts",
       "^@workspace/env$": "<rootDir>/../../../packages/env/src/index.ts",
+      "^\\.\\/filters\\.js$": "<rootDir>/../../../packages/db/src/filters.ts",
       "^\\.\\/shared\\.js$": "<rootDir>/../../../packages/env/src/shared.ts",
       "^\\.\\/server\\.js$": "<rootDir>/../../../packages/env/src/server.ts",
       "^\\.\\/web\\.js$": "<rootDir>/../../../packages/env/src/web.ts",

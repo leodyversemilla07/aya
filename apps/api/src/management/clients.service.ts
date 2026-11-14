@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { type Prisma, prisma } from '@workspace/db';
+import { type Prisma, containsIgnoreCase, prisma } from '@workspace/db';
 import type { z } from 'zod';
 import { syncBenchState } from '../domain/bench-state';
 import { occupiedAssignmentWhere, startOfToday } from '../domain/staffing';
@@ -39,10 +39,13 @@ export class ClientsService {
 
     if (query.search) {
       and.push({
-        OR: [{ name: { contains: query.search } }, { industry: { contains: query.search } }],
+        OR: [
+          { name: containsIgnoreCase(query.search) },
+          { industry: containsIgnoreCase(query.search) },
+        ],
       });
     }
-    if (query.industry) where.industry = { contains: query.industry };
+    if (query.industry) where.industry = containsIgnoreCase(query.industry);
     if (and.length > 0) where.AND = and;
 
     const [total, clients] = await Promise.all([

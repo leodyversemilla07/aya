@@ -8,6 +8,7 @@
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "moduleNameMapper": {
-    "^@workspace/db$": "<rootDir>/../../../packages/db/src/index.ts"
+    "^@workspace/db$": "<rootDir>/../../../packages/db/src/index.ts",
+    "^\\.\\/filters\\.js$": "<rootDir>/../../../packages/db/src/filters.ts"
   }
 }

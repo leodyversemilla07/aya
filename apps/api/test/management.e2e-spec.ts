@@ -393,4 +393,29 @@ describe('Management data integrity (e2e)', () => {
 
     await api().delete(`/developers/${developer.id}`).set('x-api-key', 'test-api-key').expect(200);
   });
+
+  it('matches developers regardless of search casing', async () => {
+    const developer = await createDeveloper({
+      name: `Casing Developer ${suffix}`,
+      skills: [{ name: 'TypeScript', level: 'expert', yearsExp: 6 }],
+    });
+
+    const list = await api()
+      .get('/developers')
+      .query({ search: 'casing developer' })
+      .set('x-api-key', 'test-api-key')
+      .expect(200);
+
+    expect(list.body.items.map((item: { id: string }) => item.id)).toContain(developer.id);
+
+    const bySkill = await api()
+      .get('/developers')
+      .query({ skill: 'typescript' })
+      .set('x-api-key', 'test-api-key')
+      .expect(200);
+
+    expect(bySkill.body.items.map((item: { id: string }) => item.id)).toContain(developer.id);
+
+    await api().delete(`/developers/${developer.id}`).set('x-api-key', 'test-api-key').expect(200);
+  });
 });

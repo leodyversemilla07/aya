@@ -136,6 +136,11 @@ User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Qu
 - `benchSince` marks the start of a developer's current bench period. It is cleared when the
   developer is assigned and set when they are released, so it always matches the assignment
   lifecycle. Setting a bench start date for a developer who holds an assignment returns `400`.
+- Text filters ignore case on SQLite and PostgreSQL alike. SQLite's `LIKE` is already
+  case-insensitive while PostgreSQL needs `ILIKE`, so the API builds the filter for the database in
+  use.
+- An expiry window only covers contracts that have already started, matching the dashboard and the
+  risk alerts.
 
 ### Request/response
 

@@ -1,4 +1,4 @@
-import { type Prisma, prisma } from '@workspace/db';
+import { type Prisma, containsIgnoreCase, prisma } from '@workspace/db';
 import { z } from 'zod';
 import { canonicalizeSkillName, skillNamesMatch } from '../domain/skills';
 import {
@@ -42,7 +42,7 @@ async function resolveClientId(args: {
   if (args.clientName) {
     const requestedName = normalize(args.clientName);
     const candidates = await prisma.client.findMany({
-      where: { name: { contains: args.clientName } },
+      where: { name: containsIgnoreCase(args.clientName) },
       select: { id: true, name: true },
       orderBy: { name: 'asc' },
     });
@@ -475,8 +475,11 @@ async function getUtilizationHandler(args: z.infer<typeof schemas.get_utilizatio
     if (isActive) bySeniority[seniority].active++;
     else bySeniority[seniority].bench++;
 
-    for (const assignment of developer.assignments) {
-      byClient[assignment.client.name] = (byClient[assignment.client.name] ?? 0) + 1;
+    // A developer is counted once per client even when they hold more than
+    // one assignment there, so the breakdown never exceeds the total.
+    const clientNames = new Set(developer.assignments.map((a) => a.client.name));
+    for (const clientName of clientNames) {
+      byClient[clientName] = (byClient[clientName] ?? 0) + 1;
     }
   }
 
@@ -505,6 +508,9 @@ async function checkContractsHandler(args: z.infer<typeof schemas.check_contract
 
   if (args.expiringWithin !== null && args.expiringWithin !== undefined) {
     if (!where.status) where.status = { in: ['active', 'renewing'] };
+    // Contracts that have not started yet are not expiring, so the window
+    // only covers contracts that are already running.
+    where.startDate = { lte: today };
     where.endDate = {
       gte: today,
       lte: addDays(today, args.expiringWithin),

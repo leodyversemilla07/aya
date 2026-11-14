@@ -13,6 +13,12 @@ export type {
   Skill,
 } from '@prisma/client';
 
+export {
+  type CaseInsensitiveContainsFilter,
+  containsIgnoreCase,
+  isPostgresProvider,
+} from './filters.js';
+
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 export const prisma =
