@@ -3,5 +3,7 @@ import type { Request } from 'express';
 
 export type AuthenticatedRequest = Request & {
   auth?: AuthSession;
+  /** Stable user:<id> or api-key:<sha256> ownership scope. */
+  authSubject?: string;
   requestId?: string;
 };

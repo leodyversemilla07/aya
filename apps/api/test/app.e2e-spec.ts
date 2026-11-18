@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { prisma } from '@workspace/db';
@@ -14,6 +15,7 @@ describe('AppController (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.enableCors({ origin: ['https://allowed.example'], credentials: true });
     await app.init();
   });
 
@@ -28,6 +30,22 @@ describe('AppController (e2e)', () => {
   it('/health (GET) reports a healthy service', async () => {
     const response = await request(app.getHttpServer()).get('/health').expect(200);
     expect(response.body).toMatchObject({ status: 'ok', service: 'aya-api' });
+  });
+
+  it('allows configured CORS origins and rejects unconfigured origins', async () => {
+    const allowed = await request(app.getHttpServer())
+      .options('/health')
+      .set('Origin', 'https://allowed.example')
+      .set('Access-Control-Request-Method', 'GET')
+      .expect(204);
+    expect(allowed.headers['access-control-allow-origin']).toBe('https://allowed.example');
+    expect(allowed.headers['access-control-allow-credentials']).toBe('true');
+
+    const denied = await request(app.getHttpServer())
+      .get('/health')
+      .set('Origin', 'https://untrusted.example')
+      .expect(200);
+    expect(denied.headers['access-control-allow-origin']).toBeUndefined();
   });
 
   it('/health (GET) echoes caller request IDs and generates safe ones', async () => {
@@ -66,6 +84,7 @@ describe('AppController (e2e)', () => {
     const conversation = await prisma.conversation.create({
       data: {
         title: 'Pagination test',
+        accessSubject: `api-key:${createHash('sha256').update('test-api-key').digest('hex')}`,
         messages: {
           create: [
             {
@@ -132,6 +151,46 @@ describe('AppController (e2e)', () => {
       .set('x-api-key', 'test-api-key')
       .send({})
       .expect(400);
+  });
+
+  it('isolates conversations between configured API-key identities', async () => {
+    const originalKeys = process.env.API_KEYS;
+    process.env.API_KEYS = 'client-a-key,client-b-key';
+    const subject = (key: string) => `api-key:${createHash('sha256').update(key).digest('hex')}`;
+    const first = await prisma.conversation.create({
+      data: { title: 'Client A conversation', accessSubject: subject('client-a-key') },
+    });
+    const second = await prisma.conversation.create({
+      data: { title: 'Client B conversation', accessSubject: subject('client-b-key') },
+    });
+
+    try {
+      const clientA = await request(app.getHttpServer())
+        .get('/conversations')
+        .set('x-api-key', 'client-a-key')
+        .expect(200);
+      expect(clientA.body.map((conversation: { id: string }) => conversation.id)).toContain(
+        first.id,
+      );
+      expect(clientA.body.map((conversation: { id: string }) => conversation.id)).not.toContain(
+        second.id,
+      );
+
+      const clientB = await request(app.getHttpServer())
+        .get('/conversations')
+        .set('x-api-key', 'client-b-key')
+        .expect(200);
+      expect(clientB.body.map((conversation: { id: string }) => conversation.id)).toContain(
+        second.id,
+      );
+      expect(clientB.body.map((conversation: { id: string }) => conversation.id)).not.toContain(
+        first.id,
+      );
+    } finally {
+      await prisma.conversation.deleteMany({ where: { id: { in: [first.id, second.id] } } });
+      if (originalKeys === undefined) Reflect.deleteProperty(process.env, 'API_KEYS');
+      else process.env.API_KEYS = originalKeys;
+    }
   });
 
   it('/agent/chat (POST) enforces the API key before validation', async () => {

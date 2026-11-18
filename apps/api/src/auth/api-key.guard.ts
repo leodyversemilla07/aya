@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import {
   type CanActivate,
   type ExecutionContext,
@@ -38,7 +38,8 @@ export class ApiKeyGuard implements CanActivate {
     if (isPublic) return true;
 
     const env = getServerEnv();
-    const configuredKey = env.API_KEY;
+    const configuredKeys =
+      env.API_KEYS.length > 0 ? env.API_KEYS : env.API_KEY ? [env.API_KEY] : [];
     const request = context.switchToHttp().getRequest<Request>();
     if (env.NODE_ENV !== 'test') {
       const headers = new Headers();
@@ -50,11 +51,12 @@ export class ApiKeyGuard implements CanActivate {
       const session = await auth.api.getSession({ headers });
       if (session) {
         (request as Request & { auth?: typeof session }).auth = session;
+        (request as Request & { authSubject?: string }).authSubject = `user:${session.user.id}`;
         return true;
       }
     }
 
-    if (!configuredKey) {
+    if (configuredKeys.length === 0) {
       this.logger.error('API_KEY is not configured; rejecting a protected request.');
       throw new UnauthorizedException('A valid x-api-key header is required.');
     }
@@ -66,10 +68,16 @@ export class ApiKeyGuard implements CanActivate {
         ?.replace(/^Bearer\s+/i, '')
         .trim();
 
-    if (!providedKey || !safeCompare(configuredKey, providedKey)) {
+    if (
+      !providedKey ||
+      !configuredKeys.some((configuredKey) => safeCompare(configuredKey, providedKey))
+    ) {
       this.logger.warn(`Rejected unauthenticated request to ${request.method} ${request.url}`);
       throw new UnauthorizedException('A valid x-api-key header is required.');
     }
+
+    const fingerprint = createHash('sha256').update(providedKey).digest('hex');
+    (request as Request & { authSubject?: string }).authSubject = `api-key:${fingerprint}`;
 
     return true;
   }

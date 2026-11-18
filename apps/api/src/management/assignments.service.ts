@@ -83,6 +83,9 @@ export class AssignmentsService {
     await this.ensureRelations(input.developerId, input.clientId);
     try {
       const assignment = await prisma.$transaction(async (tx) => {
+        if (input.status !== 'completed') {
+          await this.ensureNoCurrentAssignment(tx, input.developerId);
+        }
         const created = await tx.assignment.create({
           data: {
             developerId: input.developerId,
@@ -126,6 +129,19 @@ export class AssignmentsService {
 
     try {
       const assignment = await prisma.$transaction(async (tx) => {
+        const targetDeveloperId = input.developerId ?? existing.developerId;
+        const targetStatus = input.status ?? existing.status;
+        const targetStartDate = input.startDate ?? existing.startDate;
+        const targetEndDate = input.endDate === undefined ? existing.endDate : input.endDate;
+        if (targetStatus !== 'completed') {
+          await this.ensureNoOverlappingAssignment(
+            tx,
+            targetDeveloperId,
+            targetStartDate,
+            targetEndDate,
+            id,
+          );
+        }
         const updated = await tx.assignment.update({
           where: { id },
           data: {
@@ -180,5 +196,35 @@ export class AssignmentsService {
     ]);
     if (!developer) throw new BadRequestException(`Developer "${developerId}" does not exist.`);
     if (!client) throw new BadRequestException(`Client "${clientId}" does not exist.`);
+  }
+
+  private async ensureNoCurrentAssignment(tx: Prisma.TransactionClient, developerId: string) {
+    await this.ensureNoOverlappingAssignment(tx, developerId, startOfToday(), null, undefined);
+  }
+
+  private async ensureNoOverlappingAssignment(
+    tx: Prisma.TransactionClient,
+    developerId: string,
+    startDate: Date,
+    endDate: Date | null,
+    excludeId?: string,
+  ): Promise<void> {
+    const today = startOfToday();
+    const existing = await tx.assignment.findFirst({
+      where: {
+        developerId,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+        status: { in: ['active', 'ending', 'transition'] },
+        startDate: { lte: endDate ?? startDate },
+        OR: [{ endDate: null }, { endDate: { gte: startDate } }],
+      },
+      select: { id: true },
+    });
+
+    // Future assignments may be planned, but the current staffing state must
+    // never contain two occupied assignments at once.
+    if (existing && startDate <= today && (endDate === null || endDate >= today)) {
+      throw new BadRequestException('Developer already has an overlapping active assignment.');
+    }
   }
 }

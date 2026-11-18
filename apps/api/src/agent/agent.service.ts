@@ -67,6 +67,7 @@ function titleFromMessage(message: string): string {
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
+  private readonly conversationLocks = new Map<string, Promise<unknown>>();
 
   constructor(@Inject(LlmService) private readonly llmService: LlmService) {}
 
@@ -75,8 +76,9 @@ export class AgentService {
     conversationId?: string,
     clientSignal?: AbortSignal,
     userId?: string,
+    accessSubject?: string,
   ) {
-    return this.run(message, conversationId, clientSignal, userId);
+    return this.run(message, conversationId, clientSignal, userId, accessSubject);
   }
 
   async chatStream(
@@ -84,9 +86,10 @@ export class AgentService {
     conversationId: string | undefined,
     clientSignal: AbortSignal | undefined,
     userId: string | undefined,
+    accessSubject: string | undefined,
     hooks: AgentRunHooks,
   ) {
-    return this.run(message, conversationId, clientSignal, userId, hooks);
+    return this.run(message, conversationId, clientSignal, userId, accessSubject, hooks);
   }
 
   private async run(
@@ -94,11 +97,44 @@ export class AgentService {
     conversationId?: string,
     clientSignal?: AbortSignal,
     userId?: string,
+    accessSubject?: string,
+    hooks?: AgentRunHooks,
+  ) {
+    // A conversation is append-only. Serialize turns targeting the same
+    // conversation so concurrent requests cannot both read the same history
+    // and then write interleaved assistant/tool messages.
+    if (conversationId) {
+      const previous = this.conversationLocks.get(conversationId) ?? Promise.resolve();
+      const current = previous.then(() =>
+        this.runUnlocked(message, conversationId, clientSignal, userId, accessSubject, hooks),
+      );
+      this.conversationLocks.set(conversationId, current);
+      try {
+        return await current;
+      } finally {
+        if (this.conversationLocks.get(conversationId) === current) {
+          this.conversationLocks.delete(conversationId);
+        }
+      }
+    }
+
+    return this.runUnlocked(message, conversationId, clientSignal, userId, accessSubject, hooks);
+  }
+
+  private async runUnlocked(
+    message: string,
+    conversationId?: string,
+    clientSignal?: AbortSignal,
+    userId?: string,
+    accessSubject?: string,
     hooks?: AgentRunHooks,
   ) {
     let conversation = conversationId
       ? await prisma.conversation.findFirst({
-          where: { id: conversationId, ...(userId ? { userId } : {}) },
+          where: {
+            id: conversationId,
+            ...(userId ? { userId } : { accessSubject }),
+          },
         })
       : null;
 
@@ -110,6 +146,7 @@ export class AgentService {
       conversation = await prisma.conversation.create({
         data: {
           title: titleFromMessage(message),
+          accessSubject,
           ...(userId ? { user: { connect: { id: userId } } } : {}),
         },
       });

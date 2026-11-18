@@ -31,8 +31,8 @@ async function bootstrap() {
     ],
   });
 
-  if (!env.API_KEY) {
-    throw new Error('API_KEY must be configured before the API can start.');
+  if (!env.API_KEY && env.API_KEYS.length === 0) {
+    throw new Error('API_KEY or API_KEYS must be configured before the API can start.');
   }
 
   await app.listen(env.API_PORT);

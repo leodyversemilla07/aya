@@ -17,7 +17,12 @@ import { z } from 'zod';
 import type { AuthenticatedRequest } from '../auth/request';
 import { LlmError } from '../llm/llm.service';
 import { AgentService } from './agent.service';
-import { ChatQuotaService, type ChatQuotaSnapshot, quotaSubjectFor } from './chat-quota.service';
+import {
+  ChatQuotaService,
+  type ChatQuotaSnapshot,
+  type QuotaReservation,
+  quotaSubjectFor,
+} from './chat-quota.service';
 
 const chatRequestSchema = z.object({
   message: z
@@ -58,8 +63,13 @@ export class AgentController {
     @Inject(ChatQuotaService) private readonly quotaService: ChatQuotaService,
   ) {}
 
-  private async enforceQuota(request: AuthenticatedRequest, response: Response): Promise<void> {
-    const result = await this.quotaService.consume(quotaSubjectFor(request));
+  private async enforceQuota(
+    request: AuthenticatedRequest,
+    response: Response,
+  ): Promise<QuotaReservation | undefined> {
+    const subject = quotaSubjectFor(request);
+    const now = new Date();
+    const result = await this.quotaService.consume(subject, now);
     applyQuotaHeaders(response, result.snapshot);
 
     if (!result.allowed) {
@@ -73,6 +83,7 @@ export class AgentController {
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
+    return result.snapshot.enabled ? { subject, day: now.toISOString().slice(0, 10) } : undefined;
   }
 
   @Post('chat')
@@ -91,7 +102,7 @@ export class AgentController {
       });
     }
 
-    await this.enforceQuota(request, response);
+    const reservation = await this.enforceQuota(request, response);
 
     const abortController = new AbortController();
     const abort = () => abortController.abort();
@@ -104,7 +115,11 @@ export class AgentController {
         parsed.data.conversationId,
         abortController.signal,
         request.auth?.user.id,
+        request.authSubject,
       );
+    } catch (error) {
+      if (reservation) await this.quotaService.refund(reservation);
+      throw error;
     } finally {
       request.off('aborted', abort);
       response.off('close', abort);
@@ -126,7 +141,7 @@ export class AgentController {
       });
     }
 
-    await this.enforceQuota(request, response);
+    const reservation = await this.enforceQuota(request, response);
 
     response.status(HttpStatus.OK);
     response.setHeader('content-type', 'text/event-stream; charset=utf-8');
@@ -155,6 +170,7 @@ export class AgentController {
         parsed.data.conversationId,
         abortController.signal,
         request.auth?.user.id,
+        request.authSubject,
         {
           onConversation: (conversation) => send('conversation', conversation),
           onStatus: (message) => send('status', { message }),
@@ -163,6 +179,7 @@ export class AgentController {
       );
       send('done', result);
     } catch (error) {
+      if (reservation) await this.quotaService.refund(reservation);
       if (!abortController.signal.aborted) {
         if (!(error instanceof HttpException) && !(error instanceof LlmError)) {
           this.logger.error(

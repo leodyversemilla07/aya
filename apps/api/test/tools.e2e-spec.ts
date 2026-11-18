@@ -117,10 +117,9 @@ describe('staffing tools (e2e)', () => {
   });
 
   it('matches canonical skills without treating React Native as React', async () => {
-    const result = (await executeTool('match_developers', {
-      requiredSkills: ['React'],
-      startDate: '2030-01-01',
-      teamSize: 20,
+    const result = (await executeTool('query_roster', {
+      skills: ['React'],
+      limit: 50,
     })) as ToolRow[];
 
     const reactDeveloper = result.find(
@@ -130,9 +129,10 @@ describe('staffing tools (e2e)', () => {
       (developer) => developer.name === `React Native Developer ${suffix}`,
     );
 
-    expect(reactDeveloper?.matchedSkills).toContain('React');
-    expect(reactNativeDeveloper?.matchedSkills).not.toContain('React');
-    expect(reactNativeDeveloper?.missingSkills).toContain('React');
+    expect(reactDeveloper?.skills).toEqual(
+      expect.arrayContaining([expect.stringContaining('React ')]),
+    );
+    expect(reactNativeDeveloper).toBeUndefined();
   });
 
   it('requires every requested roster skill', async () => {

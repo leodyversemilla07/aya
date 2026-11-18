@@ -41,7 +41,7 @@ export class AppController {
 
   @Get('conversations')
   listConversations(@Req() request: AuthenticatedRequest) {
-    return this.appService.listConversations(request.auth?.user.id);
+    return this.appService.listConversations(request.auth?.user.id, request.authSubject);
   }
 
   @Get('conversations/:id')
@@ -56,11 +56,16 @@ export class AppController {
       throw new BadRequestException('limit must be an integer between 1 and 200.');
     }
 
-    return this.appService.getConversation(id, { limit, before }, request.auth?.user.id);
+    return this.appService.getConversation(
+      id,
+      { limit, before },
+      request.auth?.user.id,
+      request.authSubject,
+    );
   }
 
   @Delete('conversations/:id')
   deleteConversation(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
-    return this.appService.deleteConversation(id, request.auth?.user.id);
+    return this.appService.deleteConversation(id, request.auth?.user.id, request.authSubject);
   }
 }

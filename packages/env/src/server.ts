@@ -8,6 +8,7 @@ const serverEnvSchema = z
     DATABASE_URL: z.string().trim().min(1).default('file:./dev.db'),
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
     API_KEY: z.string().trim().optional(),
+    API_KEYS: z.string().optional(),
     CORS_ORIGINS: z.string().optional().default('http://localhost:3000'),
     TRUST_PROXY: z.enum(['true', 'false']).default('false'),
     LLM_PROVIDER: z
@@ -28,8 +29,15 @@ const serverEnvSchema = z
     SEED_RESET_CONVERSATIONS: z.string().optional(),
   })
   .superRefine((env, context) => {
+    if (env.CORS_ORIGINS.split(',').some((origin) => origin.trim() === '*')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['CORS_ORIGINS'],
+        message: 'Wildcard CORS origins are not allowed when credentialed CORS is enabled',
+      });
+    }
     if (env.NODE_ENV === 'production') {
-      if (!env.API_KEY) {
+      if (!env.API_KEY && !env.API_KEYS?.trim()) {
         context.addIssue({
           code: 'custom',
           path: ['API_KEY'],
@@ -46,8 +54,9 @@ const serverEnvSchema = z
     }
   });
 
-export type ServerEnv = Omit<z.infer<typeof serverEnvSchema>, 'CORS_ORIGINS'> & {
+export type ServerEnv = Omit<z.infer<typeof serverEnvSchema>, 'CORS_ORIGINS' | 'API_KEYS'> & {
   CORS_ORIGINS: string[];
+  API_KEYS: string[];
 };
 
 export function getServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
@@ -59,6 +68,7 @@ export function getServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv
   return {
     ...parsed.data,
     CORS_ORIGINS: csv(parsed.data.CORS_ORIGINS),
+    API_KEYS: csv(parsed.data.API_KEYS),
   };
 }
 

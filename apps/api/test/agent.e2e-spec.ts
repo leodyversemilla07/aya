@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { prisma } from '@workspace/db';
@@ -141,5 +142,45 @@ describe('AgentController (e2e)', () => {
       .set('x-api-key', 'test-api-key')
       .send({ message: '' })
       .expect(400);
+  });
+
+  it('serializes concurrent turns on one conversation', async () => {
+    const subject = `api-key:${createHash('sha256').update('test-api-key').digest('hex')}`;
+    const conversation = await prisma.conversation.create({
+      data: { title: 'Concurrent turns', accessSubject: subject },
+    });
+    llmChat.mockImplementation(async (messages: Array<{ role: string; content: string }>) => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const userMessage = messages.at(-1)?.content ?? '';
+      return { content: `Answer for ${userMessage}`, toolCalls: [] };
+    });
+
+    try {
+      const responses = await Promise.all([
+        request(app.getHttpServer())
+          .post('/agent/chat')
+          .set('x-api-key', 'test-api-key')
+          .send({ message: 'first turn', conversationId: conversation.id }),
+        request(app.getHttpServer())
+          .post('/agent/chat')
+          .set('x-api-key', 'test-api-key')
+          .send({ message: 'second turn', conversationId: conversation.id }),
+      ]);
+
+      expect(responses.map((response) => response.status)).toEqual([200, 200]);
+      expect(llmChat).toHaveBeenCalledTimes(2);
+      const secondMessages = llmChat.mock.calls[1]?.[0] as Array<{
+        role: string;
+        content: string;
+      }>;
+      expect(secondMessages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ role: 'assistant', content: 'Answer for first turn' }),
+          expect.objectContaining({ role: 'user', content: 'second turn' }),
+        ]),
+      );
+    } finally {
+      await prisma.conversation.delete({ where: { id: conversation.id } });
+    }
   });
 });

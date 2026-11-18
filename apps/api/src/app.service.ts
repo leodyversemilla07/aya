@@ -92,9 +92,9 @@ export class AppService {
     };
   }
 
-  async listConversations(userId?: string) {
+  async listConversations(userId?: string, accessSubject?: string) {
     const conversations = await prisma.conversation.findMany({
-      where: userId ? { userId } : undefined,
+      where: userId ? { userId } : accessSubject ? { accessSubject } : undefined,
       orderBy: { updatedAt: 'desc' },
       take: 50,
       include: {
@@ -129,9 +129,13 @@ export class AppService {
     id: string,
     options: { limit?: number; before?: string } = {},
     userId?: string,
+    accessSubject?: string,
   ) {
     const conversation = await prisma.conversation.findUnique({
-      where: { id, ...(userId ? { userId } : {}) },
+      where: {
+        id,
+        ...(userId ? { userId } : { accessSubject }),
+      },
       select: { id: true, title: true, createdAt: true, updatedAt: true },
     });
 
@@ -192,9 +196,9 @@ export class AppService {
     };
   }
 
-  async deleteConversation(id: string, userId?: string) {
+  async deleteConversation(id: string, userId?: string, accessSubject?: string) {
     const conversation = await prisma.conversation.findUnique({
-      where: { id, ...(userId ? { userId } : {}) },
+      where: { id, ...(userId ? { userId } : { accessSubject }) },
       select: { id: true },
     });
 

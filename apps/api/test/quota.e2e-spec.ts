@@ -116,4 +116,20 @@ describe('Chat quota (e2e)', () => {
     });
     expect(usage?.count).toBe(1);
   });
+
+  it('refunds quota when the provider request fails', async () => {
+    llmChat.mockRejectedValueOnce(new Error('provider unavailable'));
+
+    await request(app.getHttpServer())
+      .post('/agent/chat')
+      .set('x-api-key', 'test-api-key')
+      .send({ message: 'Failed provider request' })
+      .expect(500);
+
+    const day = new Date().toISOString().slice(0, 10);
+    const usage = await prisma.chatUsage.findUnique({
+      where: { subject_day: { subject: 'api-key', day } },
+    });
+    expect(usage).toBeNull();
+  });
 });

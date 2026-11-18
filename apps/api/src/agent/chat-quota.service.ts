@@ -15,6 +15,11 @@ export interface ChatQuotaResult {
   snapshot: ChatQuotaSnapshot;
 }
 
+export interface QuotaReservation {
+  subject: string;
+  day: string;
+}
+
 export function quotaSubjectFor(request: {
   auth?: { user?: { id?: string } } | null;
 }): string {
@@ -84,5 +89,23 @@ export class ChatQuotaService {
         resetsAt,
       },
     };
+  }
+
+  async refund(reservation: QuotaReservation): Promise<void> {
+    if (this.limit <= 0) return;
+    await prisma.$transaction(async (tx) => {
+      const record = await tx.chatUsage.findUnique({
+        where: { subject_day: reservation },
+      });
+      if (!record) return;
+      if (record.count <= 1) {
+        await tx.chatUsage.delete({ where: { id: record.id } });
+      } else {
+        await tx.chatUsage.update({
+          where: { id: record.id },
+          data: { count: { decrement: 1 } },
+        });
+      }
+    });
   }
 }

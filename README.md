@@ -77,6 +77,10 @@ using `NEXT_PUBLIC_API_URL` with credentials included; the API validates the ses
 origin. The Next.js app has no `app/api` routes — authentication and application endpoints are both
 served by NestJS.
 
+API-key authentication is intended for trusted internal clients. Each configured API key has its
+own conversation and quota scope. Use Better Auth sessions when conversations must be isolated per
+human user.
+
 > [!NOTE]
 > A production deployment should place the web app behind an identity-aware gateway for enterprise
 > SSO and per-user rate limiting. Better Auth sessions provide the application-level user identity.
@@ -167,6 +171,7 @@ AGENT_TIMEOUT_MS="180000"
 # API
 API_PORT="3001"
 API_KEY="change-me-to-a-long-random-string"
+API_KEYS="client-a-secret,client-b-secret"
 CORS_ORIGINS="http://localhost:3000"
 TRUST_PROXY="false"
 CHAT_DAILY_QUOTA="200"
@@ -186,7 +191,8 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 | `LLM_MAX_TOKENS` | `4096` | Maximum completion tokens. |
 | `AGENT_TIMEOUT_MS` | `180000` | Total deadline for a single agent turn. |
 | `API_PORT` | `3001` | API listen port. |
-| `API_KEY` | — | **Required in every environment**; startup fails without it. |
+| `API_KEY` | — | Legacy single internal client key; `API_KEY` or `API_KEYS` is required. |
+| `API_KEYS` | — | Optional comma-separated additional internal client keys. |
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowlist. Do not use `*` with credentials. |
 | `TRUST_PROXY` | `false` | Set `true` when a trusted reverse proxy terminates TLS. |
 | `CHAT_DAILY_QUOTA` | `200` | Chat requests per user/API key per UTC day. `0` disables quotas. |
@@ -195,9 +201,12 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 | `SEED_RESET_CONVERSATIONS` | `false` | Also reset conversations when seeding. |
 
 > [!IMPORTANT]
-> `API_KEY` is required in every environment; the API refuses to start without it. Never expose
+> `API_KEY` or `API_KEYS` is required in every environment; the API refuses to start without one. Never expose
 > API keys, `BETTER_AUTH_SECRET`, or other server secrets to browser code — `NEXT_PUBLIC_API_URL`
 > is the only value that should reach the client.
+
+Each configured API key gets its own hashed conversation ownership scope and daily quota subject;
+raw keys are never stored. `API_KEYS` may be used instead of or alongside the legacy `API_KEY`.
 
 ## API
 

@@ -185,6 +185,8 @@ model Performance {
 model Conversation {
   id        String    @id @default(cuid())
   title     String?
+  // Session user IDs and hashed API-key identities both use this scope.
+  accessSubject String?
   messages  Message[]
   user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String?
@@ -192,6 +194,7 @@ model Conversation {
   updatedAt DateTime  @updatedAt
 
   @@index([updatedAt])
+  @@index([accessSubject])
 }
 
 model Message {
