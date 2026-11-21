@@ -6,6 +6,7 @@ import { conversationsQuery, queryKeys } from '@/lib/queries';
 import type {
   ChatMessage,
   ChatResponse,
+  ChatToolStep,
   ConversationDetail,
   ConversationSummary,
 } from '@/lib/types';
@@ -24,6 +25,20 @@ import {
 const CONVERSATION_STORAGE_KEY = 'aya:conversation-id';
 const PAGE_SIZE = 50;
 
+const TOOL_LABELS: Record<string, string> = {
+  query_roster: 'Searching the developer roster',
+  match_developers: 'Matching developers to the requirement',
+  get_utilization: 'Checking utilization',
+  check_contracts: 'Reviewing contracts',
+  get_performance: 'Reviewing performance data',
+  get_alerts: 'Scanning for risks',
+  forecast_capacity: 'Forecasting capacity and backfills',
+};
+
+function toolLabel(name: string): string {
+  return TOOL_LABELS[name] ?? `Running ${name}`;
+}
+
 interface ChatContextValue {
   messages: ChatMessage[];
   loading: boolean;
@@ -32,6 +47,7 @@ interface ChatContextValue {
   hasMore: boolean;
   status: string | null;
   streamingContent: string;
+  toolSteps: ChatToolStep[];
   error: string | null;
   conversationId: string | null;
   conversations: ConversationSummary[];
@@ -79,7 +95,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState('');
+  const [toolSteps, setToolSteps] = useState<ChatToolStep[]>([]);
+  const toolStepsRef = useRef<ChatToolStep[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const resetToolSteps = useCallback(() => {
+    toolStepsRef.current = [];
+    setToolSteps([]);
+  }, []);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
@@ -118,8 +141,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setNextCursor(null);
     setStatus(null);
     setStreamingContent('');
+    resetToolSteps();
     window.localStorage.removeItem(CONVERSATION_STORAGE_KEY);
-  }, []);
+  }, [resetToolSteps]);
 
   const loadConversation = useCallback(
     async (id: string, options?: { silent?: boolean }) => {
@@ -177,6 +201,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         conversationIdRef.current = null;
         setHasMore(false);
         setNextCursor(null);
+        resetToolSteps();
         window.localStorage.removeItem(CONVERSATION_STORAGE_KEY);
       } finally {
         if (loadAbortRef.current === controller) {
@@ -188,7 +213,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [queryClient],
+    [queryClient, resetToolSteps],
   );
 
   const loadOlderMessages = useCallback(async () => {
@@ -270,6 +295,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       const trimmed = text.trim();
       if (!trimmed || sendingRef.current) return;
 
+      resetToolSteps();
+
       // A stored conversation may still be loading when the user sends the
       // first message. Abort that load so it cannot overwrite this turn.
       loadAbortRef.current?.abort();
@@ -331,6 +358,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               setStatus(null);
               setStreamingContent((previous) => previous + content);
             },
+            onToolCall: ({ name, input }) => {
+              const step: ChatToolStep = {
+                key: `${name}-${toolStepsRef.current.length}`,
+                name,
+                label: toolLabel(name),
+                input,
+                state: 'running',
+              };
+              toolStepsRef.current = [...toolStepsRef.current, step];
+              setToolSteps(toolStepsRef.current);
+              setStatus(null);
+            },
+            onToolResult: ({ name, output }) => {
+              toolStepsRef.current = toolStepsRef.current.map((step) =>
+                step.name === name && step.state === 'running'
+                  ? { ...step, output, state: 'done' }
+                  : step,
+              );
+              setToolSteps(toolStepsRef.current);
+            },
           });
           applyConversation(result.conversationId);
           finalContent = result.content;
@@ -344,8 +391,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           finalContent = data.content;
         }
 
-        setMessages((previous) => [...previous, { role: 'assistant', content: finalContent }]);
+        // Capture the steps before resetting: the setMessages updater runs
+        // lazily during render, after the ref has been cleared.
+        const turnSteps = toolStepsRef.current;
+        setMessages((previous) => [
+          ...previous,
+          { role: 'assistant', content: finalContent, steps: turnSteps },
+        ]);
         setStreamingContent('');
+        resetToolSteps();
         setStatus(null);
         await queryClient.invalidateQueries({ queryKey: queryKeys.conversations });
       } catch (sendError) {
@@ -368,7 +422,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [queryClient],
+    [queryClient, resetToolSteps],
   );
 
   useEffect(() => {
@@ -395,6 +449,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       hasMore,
       status,
       streamingContent,
+      toolSteps,
       error,
       conversationId,
       conversations: conversationsQueryState.data ?? [],
@@ -415,6 +470,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       hasMore,
       status,
       streamingContent,
+      toolSteps,
       error,
       conversationId,
       conversationsQueryState.data,

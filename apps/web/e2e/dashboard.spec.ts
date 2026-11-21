@@ -30,6 +30,8 @@ test.describe('dashboard and chat', () => {
         contentType: 'text/event-stream',
         body: [
           'event: conversation\ndata: {"id":"e2e-conversation","title":"Who is on the bench?"}\n\n',
+          'event: tool_call\ndata: {"index":0,"name":"get_utilization","input":{"scope":"all"}}\n\n',
+          'event: tool_result\ndata: {"index":0,"name":"get_utilization","output":{"onBench":2}}\n\n',
           'event: delta\ndata: {"content":"**2 developers** are on the bench."}\n\n',
           'event: done\ndata: {"conversationId":"e2e-conversation","content":"**2 developers** are on the bench."}\n\n',
         ].join(''),
@@ -42,6 +44,11 @@ test.describe('dashboard and chat', () => {
 
     await expect(page.getByText('Who is on the bench?')).toBeVisible();
     await expect(page.getByText('2 developers')).toBeVisible();
+
+    // The tool call renders as an expandable trace step above the reply.
+    await expect(page.getByText('Checking utilization')).toBeVisible();
+    await page.getByText('Checking utilization').click();
+    await expect(page.getByText('"scope": "all"')).toBeVisible();
 
     const storedId = await page.evaluate(() => window.localStorage.getItem('aya:conversation-id'));
     expect(storedId).toBe('e2e-conversation');

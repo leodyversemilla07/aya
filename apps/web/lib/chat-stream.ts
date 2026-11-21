@@ -2,6 +2,8 @@ export interface ChatStreamHandlers {
   onConversation?: (conversation: { id: string; title: string }) => void;
   onStatus?: (message: string) => void;
   onDelta?: (content: string) => void;
+  onToolCall?: (event: { name: string; input?: unknown }) => void;
+  onToolResult?: (event: { name: string; output?: unknown }) => void;
 }
 
 export interface ChatStreamResult {
@@ -72,6 +74,20 @@ export async function consumeChatStream(
 
     if (name === 'delta') {
       if (typeof payload.content === 'string') handlers.onDelta?.(payload.content);
+      return;
+    }
+
+    if (name === 'tool_call') {
+      if (typeof payload.name === 'string') {
+        handlers.onToolCall?.({ name: payload.name, input: payload.input });
+      }
+      return;
+    }
+
+    if (name === 'tool_result') {
+      if (typeof payload.name === 'string') {
+        handlers.onToolResult?.({ name: payload.name, output: payload.output });
+      }
       return;
     }
 

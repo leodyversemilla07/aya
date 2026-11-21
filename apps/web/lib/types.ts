@@ -2,11 +2,21 @@ import type { UserRole } from '@workspace/auth/roles';
 
 export type ChatRole = 'user' | 'assistant';
 
+export interface ChatToolStep {
+  key: string;
+  name: string;
+  label: string;
+  input?: unknown;
+  output?: unknown;
+  state: 'running' | 'done';
+}
+
 export interface ChatMessage {
   id?: string;
   role: ChatRole;
   content: string;
   createdAt?: string;
+  steps?: ChatToolStep[];
 }
 
 export interface ConversationSummary {
