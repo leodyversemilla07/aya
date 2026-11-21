@@ -8,6 +8,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ApiKeyGuard } from './auth/api-key.guard';
 import { AuthController } from './auth/auth.controller';
+import { ForecastingModule } from './forecasting/forecasting.module';
 import { ManagementModule } from './management/management.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AllExceptionsFilter } from './observability/all-exceptions.filter';
@@ -29,6 +30,7 @@ import { requestIdMiddleware } from './observability/request-logger';
     NotificationsModule,
     AdminModule,
     MetricsModule,
+    ForecastingModule,
   ],
   controllers: [AppController, AuthController],
   providers: [

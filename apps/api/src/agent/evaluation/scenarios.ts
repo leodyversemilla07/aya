@@ -317,6 +317,30 @@ export function createEvaluationScenarios(now = new Date()): EvaluationScenario[
       ],
     },
     {
+      id: 'capacity-forecast-backfill',
+      description: 'Forecasts upcoming openings and recommends a backfill from the bench.',
+      turns: [
+        {
+          prompt:
+            'Which contracts end in the next 8 weeks, and who from the bench should backfill them?',
+          expectations: {
+            toolSequence: ['forecast_capacity'],
+            arguments: [{ callIndex: 0, contains: { weeks: 8 } }],
+            response: {
+              includesAny: [['UnionBank', 'Rico Tan']],
+            },
+            groundedEntities: ['UnionBank', 'Rico Tan'],
+          },
+        },
+      ],
+      replay: [
+        toolStep('forecast_capacity', { weeks: 8 }, 'replay-capacity-forecast-tool'),
+        answerStep(
+          'The forecast shows Juan Dela Cruz leaving UnionBank soon, and Rico Tan is the recommended backfill from the bench.',
+        ),
+      ],
+    },
+    {
       id: 'unknown-client-error',
       description: 'Handles a missing client safely and asks for a correction.',
       turns: [

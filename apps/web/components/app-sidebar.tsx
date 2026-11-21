@@ -18,6 +18,7 @@ import {
   Bell,
   Briefcase,
   Building2,
+  CalendarClock,
   FileText,
   Home,
   MessageSquare,
@@ -39,6 +40,7 @@ import { TeamSwitcher } from './team-switcher';
 const navigation = [
   { title: 'Dashboard', url: '/', icon: Home },
   { title: 'Chat', url: '/chat', icon: MessageSquare },
+  { title: 'Capacity', url: '/capacity', icon: CalendarClock },
   { title: 'Notifications', url: '/notifications', icon: Bell },
 ];
 

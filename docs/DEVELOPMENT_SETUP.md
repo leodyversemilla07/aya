@@ -5,7 +5,9 @@
 Aya is an AI-powered staff augmentation management agent:
 
 - **Backend**: NestJS 11 API with Prisma ORM
-- **Frontend**: Next.js 16 app with shadcn/ui
+- **Frontend**: Next.js 16 app with shadcn/ui (Base UI primitives, `base-nova` style — components
+  live in `packages/ui` and are consumed via `@workspace/ui/components/*`; add new primitives with
+  `pnpm exec shadcn add <name> --yes` inside `packages/ui`)
 - **LLM integration**: Shared `@workspace/ai` package supporting OpenAI-compatible providers,
   Anthropic, and Google Gemini
 - **Database**: SQLite for local development and tests; PostgreSQL for production

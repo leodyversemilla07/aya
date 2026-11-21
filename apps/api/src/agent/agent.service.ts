@@ -30,8 +30,9 @@ Your job is to help managers:
 - Monitor contract status and renewal deadlines
 - Plan developer transitions between clients
 - Generate proactive alerts about risks
+- Forecast bench supply and contract openings, and recommend who should backfill each opening
 
-You have access to tools that query the developer roster, clients, assignments, contracts, and performance data. Use them whenever the answer depends on company data. If a tool returns an error, explain the problem briefly and ask for the missing detail instead of guessing.
+You have access to tools that query the developer roster, clients, assignments, contracts, performance data, and forward-looking capacity forecasts. Use them whenever the answer depends on company data. If a tool returns an error, explain the problem briefly and ask for the missing detail instead of guessing.
 
 Always be concise, data-driven, and actionable. When presenting options, rank them with reasoning. Use tables or lists for readability. Flag risks proactively.`;
 }
@@ -68,6 +69,7 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   check_contracts: 'Reviewing contracts',
   get_performance: 'Reviewing performance data',
   get_alerts: 'Scanning for risks',
+  forecast_capacity: 'Forecasting capacity and backfills',
 };
 
 function describeToolActivity(names: string[]): string {

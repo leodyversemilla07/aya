@@ -26,7 +26,7 @@ natural language conversation.
 | Frontend | Next.js | 16 |
 | Database | SQLite (dev/test), PostgreSQL (production) | 3 / 17 |
 | ORM | Prisma | 6 |
-| UI | shadcn/ui, Tailwind CSS | latest |
+| UI | shadcn/ui (Base UI primitives, `base-nova` style), Tailwind CSS | latest |
 | LLM | OpenAI-compatible API | — |
 | Validation | Zod | 4 |
 | Package manager | pnpm | 12.16 |
@@ -154,7 +154,7 @@ disposable seeded database. Replay mode substitutes checked-in model responses, 
 selection, arguments, grounding, response content, and error handling deterministic and
 provider-free. Live mode uses the configured provider with the same scenario assertions.
 
-- Twelve scenarios cover every agent tool, multi-turn context, empty results, ambiguous clients,
+- Thirteen scenarios cover every agent tool, multi-turn context, empty results, ambiguous clients,
   and missing records.
 - Tool arguments are checked against the production Zod schemas.
 - Named facts must appear in both tool output and the answer to pass grounding checks.
@@ -180,6 +180,18 @@ Every transition creates a global notification; per-user read records are stored
 open the inbox. The web app exposes an unread badge and read-all action. A token-protected
 `/metrics` endpoint exposes worker lag, scan duration, alert transitions, delivery attempts,
 notification counts, and state gauges in Prometheus text format.
+
+### Capacity forecasting
+
+`GET /forecast` and the agent's `forecast_capacity` tool share one pure forecasting engine
+(`apps/api/src/forecasting/forecast.ts`). The engine projects weekly bench supply against contract
+openings for a 1–26 week horizon (default 8): assignments ending inside the horizon become openings,
+bench developers are ranked per opening by skill coverage, availability, client history, seniority,
+and performance, and each opening returns up to three recommendations with `strong`, `partial`, or
+`weak` confidence plus scoring reasons. Availability uses the same occupied-assignment rules as the
+rest of the app, and a client filter scopes the forecast to one customer. The web `/capacity` page
+renders summary cards, a weekly supply-and-demand chart, opening cards with recommendations, and
+the bench pool.
 
 ## API endpoints
 
@@ -215,6 +227,7 @@ notification counts, and state gauges in Prometheus text format.
 | `/notifications/unread-count` | GET | Session | Get the current user's unread count |
 | `/notifications/:id/read` | POST | Session | Mark one notification as read |
 | `/notifications/read-all` | POST | Session | Mark all notifications as read |
+| `/forecast` | GET | Session / API key | Capacity forecast (`weeks`, optional `clientId`) with openings and recommendations |
 | `/metrics` | GET | Metrics token | Prometheus exposition for alert operations |
 
 ### Management rules
@@ -300,6 +313,7 @@ Provider errors are mapped to safe messages:
 | `/assignments` | Assignment list with status/active filters and CRUD |
 | `/performance` | Performance records with developer filter and CRUD |
 | `/notifications` | Alert notification inbox with unread filtering and read state |
+| `/capacity` | Capacity forecast with horizon switcher, openings, backfill recommendations, and bench pool |
 | `/admin/users` | Admin-only workspace user and role management |
 | `/admin/audit-logs` | Admin-only audit history browser |
 

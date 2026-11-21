@@ -1,6 +1,7 @@
 import { apiRequest, buildQuery } from './api';
 import type {
   AssignmentRecord,
+  CapacityForecast,
   ClientDetail,
   ClientSummary,
   ContractRecord,
@@ -74,6 +75,7 @@ export const queryKeys = {
   performance: (query: PerformanceQuery) => ['performance', query] as const,
   notifications: ['notifications'] as const,
   notificationUnreadCount: ['notifications', 'unread-count'] as const,
+  forecast: (weeks: number, clientId?: string) => ['forecast', weeks, clientId ?? 'all'] as const,
 };
 
 export function conversationsQuery() {
@@ -96,6 +98,14 @@ export function statsQuery() {
   return {
     queryKey: queryKeys.stats,
     queryFn: ({ signal }: { signal: AbortSignal }) => getJson<DashboardStats>('/stats', signal),
+  };
+}
+
+export function forecastQuery(weeks: number, clientId?: string) {
+  return {
+    queryKey: queryKeys.forecast(weeks, clientId),
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      getJson<CapacityForecast>(`/forecast${buildQuery({ weeks, clientId })}`, signal),
   };
 }
 

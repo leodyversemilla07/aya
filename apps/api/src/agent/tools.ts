@@ -10,8 +10,13 @@ import {
   occupiedAssignmentWhere,
   startOfToday,
 } from '../domain/staffing';
+import { ForecastService } from '../forecasting/forecast.service';
 
 // ─── Helpers ──────────────────────────────────────────
+
+// The tool router runs outside the Nest injector, so the forecast service is
+// created directly. It has no injected dependencies of its own.
+const forecastService = new ForecastService();
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
@@ -154,6 +159,16 @@ export const schemas = {
   get_alerts: z.object({
     type: z.enum(['all', 'bench', 'contract', 'performance']).nullish(),
   }),
+  forecast_capacity: z.object({
+    weeks: z
+      .number()
+      .int()
+      .min(1)
+      .max(26)
+      .nullish()
+      .describe('Forecast horizon in weeks (default 8)'),
+    clientId: z.string().trim().min(1).nullish().describe('Limit openings to one client ID'),
+  }),
 } as const;
 
 type ToolName = keyof typeof schemas;
@@ -190,6 +205,11 @@ export const tools = {
     description:
       'Get proactive risk alerts: long bench time, expiring or expired contracts, and performance concerns.',
     parameters: schemas.get_alerts,
+  },
+  forecast_capacity: {
+    description:
+      'Forecast staffing capacity for the coming weeks: expected bench supply, contracts that open up, and ranked backfill candidates for each opening.',
+    parameters: schemas.forecast_capacity,
   },
 } satisfies Record<string, { description: string; parameters: z.ZodTypeAny }>;
 
@@ -595,6 +615,45 @@ async function getAlertsHandler(args: z.infer<typeof schemas.get_alerts>) {
   }));
 }
 
+async function forecastCapacityHandler(args: z.infer<typeof schemas.forecast_capacity>) {
+  const forecast = await forecastService.forecast({
+    ...(args.weeks === null || args.weeks === undefined ? {} : { weeks: args.weeks }),
+    ...(args.clientId ? { clientId: args.clientId } : {}),
+  });
+
+  return {
+    horizonWeeks: forecast.horizonWeeks,
+    today: forecast.today,
+    summary: forecast.summary,
+    timeline: forecast.timeline,
+    openings: forecast.openings.map((opening) => ({
+      client: opening.client,
+      clientIndustry: opening.clientIndustry,
+      developer: opening.developer,
+      endDate: opening.endDate,
+      daysUntilEnd: opening.daysUntilEnd,
+      renewalLikely: opening.renewalLikely,
+      requiredSkills: opening.requiredSkills.map((skill) => skill.name),
+      recommendedBackfills: opening.recommendations.map((recommendation) => ({
+        developer: recommendation.name,
+        seniority: recommendation.seniority,
+        score: recommendation.score,
+        confidence: recommendation.confidence,
+        matchedSkills: recommendation.matchedSkills,
+        missingSkills: recommendation.missingSkills,
+        reasons: recommendation.reasons,
+        availableFrom: recommendation.availableFrom,
+      })),
+    })),
+    benchPool: forecast.benchPool.map((member) => ({
+      developer: member.name,
+      seniority: member.seniority,
+      benchDays: member.benchDays,
+      skills: member.skills,
+    })),
+  };
+}
+
 // ─── Tool Router ──────────────────────────────────────
 
 function invalidArguments(name: string, error: z.ZodError) {
@@ -641,6 +700,12 @@ export async function executeTool(name: string, args: Record<string, unknown>) {
         const parsed = schemas.get_alerts.safeParse(args);
         return parsed.success
           ? await getAlertsHandler(parsed.data)
+          : invalidArguments(name, parsed.error);
+      }
+      case 'forecast_capacity': {
+        const parsed = schemas.forecast_capacity.safeParse(args);
+        return parsed.success
+          ? await forecastCapacityHandler(parsed.data)
           : invalidArguments(name, parsed.error);
       }
       default:

@@ -43,6 +43,8 @@ days?"_ — and return ranked, explainable answers.
   developer or team.
 - **Proactive risk alerts** — surfaces bench time over 14 days, contracts expiring within 30 days
   (or recently expired), and performance concerns, ranked by severity.
+- **Capacity forecasting** — projects weekly bench supply against contract openings for a chosen
+  horizon (4–26 weeks) and recommends ranked, explainable backfill candidates per opening.
 - **Durable background alerts** — a leased worker detects, deduplicates, resolves, and reopens alerts,
   then sends signed webhook events with observable retry history.
 - **In-app alert inbox** — workspace notifications provide a bell badge, unread filtering, and
@@ -112,7 +114,7 @@ human user.
 | Layer | Technology |
 |-------|------------|
 | Backend | NestJS 11, Prisma 6, SQLite (development/tests) or PostgreSQL (production) |
-| Frontend | Next.js 16, React 19, shadcn/ui, Tailwind CSS, react-markdown |
+| Frontend | Next.js 16, React 19, shadcn/ui (Base UI), Tailwind CSS, react-markdown |
 | LLM | Shared `@workspace/ai` package (OpenAI, OpenRouter, OpenCode Zen, Anthropic, Google Gemini, custom OpenAI-compatible) |
 | Validation | Zod 4 |
 | Auth | Better Auth email/password sessions + API-key compatibility |
@@ -286,6 +288,7 @@ raw keys are never stored. `API_KEYS` may be used instead of or alongside the le
 | `/notifications/unread-count` | `GET` | Session | Get the signed-in user's unread count |
 | `/notifications/:id/read` | `POST` | Session | Mark one notification as read |
 | `/notifications/read-all` | `POST` | Session | Mark all notifications as read |
+| `/forecast` | `GET` | Session / API key | Capacity forecast with openings, bench pool, and backfill recommendations |
 | `/metrics` | `GET` | Metrics token | Prometheus exposition for alert operations |
 
 ### Chat request
@@ -401,7 +404,7 @@ network failures return `502`.
 
 ## Agent capabilities
 
-Aya can call six tools autonomously:
+Aya can call seven tools autonomously:
 
 | Tool | What it does |
 |------|--------------|
@@ -411,6 +414,7 @@ Aya can call six tools autonomously:
 | `check_contracts` | Contract status, billing rates, and upcoming renewals |
 | `get_performance` | Developer or team performance data |
 | `get_alerts` | Proactive risk alerts (bench time, expiring contracts, performance) |
+| `forecast_capacity` | Weekly capacity forecast with ranked backfill recommendations for an 8-week (or 1–26 week) horizon |
 
 `get_alerts` and the background worker use the same alert query service, so chat answers and
 proactive detection follow one set of rules. See

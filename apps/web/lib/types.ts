@@ -47,6 +47,71 @@ export interface ChatResponse {
   content: string;
 }
 
+// ─── Capacity forecast ─────────────────────────────────
+
+export interface ForecastRecommendation {
+  developerId: string;
+  name: string;
+  seniority: string;
+  score: number;
+  confidence: 'strong' | 'partial' | 'weak';
+  matchedSkills: string[];
+  missingSkills: string[];
+  reasons: string[];
+  availableFrom: string | null;
+}
+
+export interface ForecastOpening {
+  contractId: string;
+  developerId: string;
+  developer: string;
+  developerSeniority: string;
+  clientId: string;
+  client: string;
+  clientIndustry: string;
+  endDate: string;
+  daysUntilEnd: number;
+  renewalLikely: boolean;
+  requiredSkills: Array<{ name: string; level: string }>;
+  recommendations: ForecastRecommendation[];
+}
+
+export interface ForecastWeek {
+  weekStart: string;
+  weekEnd: string;
+  onBench: number;
+  openings: number;
+  utilizationRate: number;
+}
+
+export interface ForecastBenchMember {
+  developerId: string;
+  name: string;
+  seniority: string;
+  benchSince: string | null;
+  benchDays: number;
+  skills: string[];
+}
+
+export interface CapacityForecast {
+  horizonWeeks: number;
+  generatedAt: string;
+  today: string;
+  summary: {
+    developers: number;
+    onBenchNow: number;
+    benchOver30Days: number;
+    openings: number;
+    clientsAffected: number;
+    projectedBench: number;
+    projectedUtilization: number;
+    openingsWithRecommendations: number;
+  };
+  timeline: ForecastWeek[];
+  openings: ForecastOpening[];
+  benchPool: ForecastBenchMember[];
+}
+
 // ─── Management ───────────────────────────────────────
 
 export interface Paginated<T> {
