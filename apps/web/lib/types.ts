@@ -199,6 +199,32 @@ export interface WorkspaceUserRecord {
   updatedAt: string;
 }
 
+export interface NotificationRecord {
+  id: string;
+  event: 'opened' | 'updated' | 'reopened' | 'resolved';
+  severity: 'high' | 'medium' | 'low' | string;
+  title: string;
+  message: string;
+  read: boolean;
+  readAt: string | null;
+  createdAt: string;
+  alert: {
+    fingerprint: string;
+    type: string;
+    status: string;
+    entityType: string;
+    entityId: string;
+  };
+}
+
+export interface NotificationList extends Paginated<NotificationRecord> {
+  unreadTotal: number;
+}
+
+export interface UnreadNotificationCount {
+  unread: number;
+}
+
 export interface AuditLogRecord {
   id: string;
   actor: {
@@ -210,7 +236,7 @@ export interface AuditLogRecord {
   actorType: 'user' | 'api-key';
   actorName: string;
   actorKey: string | null;
-  action: 'create' | 'update' | 'delete';
+  action: 'create' | 'update' | 'delete' | 'scan';
   entityType: string;
   entityId: string;
   before: unknown;

@@ -11,7 +11,9 @@ natural language conversation.
 1. **Staff augmentation intelligence** — AI assistant for managing developer resources
 2. **Conversational interface** — natural language queries about teams and projects
 3. **Data-driven decisions** — utilization metrics, contract tracking, performance data
-4. **Safe deployment** — Better Auth sessions, API-key compatibility, sanitized errors, and rate
+4. **Proactive operations** — durable staffing alert detection, safe multi-worker coordination, and
+   signed webhook delivery
+5. **Safe deployment** — Better Auth sessions, API-key compatibility, sanitized errors, and rate
    limiting
 
 ## Architecture
@@ -39,6 +41,8 @@ apps/
   api/
     src/
       agent/        Agent controller, loop, tool handlers, tool schemas
+      alerts/       Shared alert query, durable scanner, worker lease, webhook delivery
+      notifications/ Notification inbox and per-user read state
       auth/         API-key guard and @Public decorator
       management/   CRUD API for developers, clients, contracts, assignments, performance
       llm/          OpenAI-compatible provider client
@@ -104,6 +108,15 @@ application endpoints use `/stats`, `/conversations`, and `/agent/chat`.
    - Assertions for tool sequence, argument validity, response content, and data grounding
    - Reports for pass rates, tool calls, token usage, and latency
 
+10. **Background staffing alerts**
+    - Shared alert query used by both the agent tool and the scheduled scanner
+    - Durable open/resolved state with stable fingerprints, severity updates, and reopening
+    - Database worker lease and atomic delivery claims for safe concurrent execution
+    - Signed webhook events with timeout, retry, and delivery-attempt history
+    - In-app notification inbox with per-user unread and read state
+    - Token-protected Prometheus metrics for worker and delivery operations
+    - Authenticated alert-state endpoint and administrator-only delivery history
+
 ### Agent loop
 
 ```
@@ -137,6 +150,22 @@ provider-free. Live mode uses the configured provider with the same scenario ass
 - Replay mode guards orchestration and grounding regressions; prompt, tool-description, and model
   regressions require a live-provider run.
 
+### Background alert pipeline
+
+The agent's `get_alerts` tool and the background scanner call one alert query service. The scanner
+writes a `StaffingAlert` row for each stable condition fingerprint and records `opened`, `updated`,
+`reopened`, and `resolved` transitions in an `AlertDelivery` outbox. Resolved state is retained.
+
+A standalone worker acquires a PostgreSQL or SQLite database lease before each iteration. It then
+scans current staffing data and claims pending webhook deliveries. Delivery is at least once and
+uses a stable delivery ID, exponential retry, a request timeout, and HMAC-SHA256 signatures.
+Administrators can inspect attempt count, next retry, last error, response status, and timestamps.
+
+Every transition creates a global notification; per-user read records are stored separately as users
+open the inbox. The web app exposes an unread badge and read-all action. A token-protected
+`/metrics` endpoint exposes worker lag, scan duration, alert transitions, delivery attempts,
+notification counts, and state gauges in Prometheus text format.
+
 ## API endpoints
 
 | Endpoint | Method | Auth | Description |
@@ -163,6 +192,15 @@ provider-free. Live mode uses the configured provider with the same scenario ass
 | `/admin/users` | GET | Admin | List workspace users and roles |
 | `/admin/users/:id/role` | PATCH | Admin | Change a workspace user's role |
 | `/admin/audit-logs` | GET | Admin | Browse mutation and access audit history |
+| `/alerts` | GET | Session / API key | List persisted staffing alert state |
+| `/alerts/deliveries` | GET | Admin | Inspect webhook delivery attempts and failures |
+| `/admin/alerts/config` | GET | Admin | Inspect effective alert rules and delivery configuration |
+| `/admin/alerts/scan` | POST | Admin | Trigger an immediate, audited alert scan |
+| `/notifications` | GET | Session | List the current user's notification inbox |
+| `/notifications/unread-count` | GET | Session | Get the current user's unread count |
+| `/notifications/:id/read` | POST | Session | Mark one notification as read |
+| `/notifications/read-all` | POST | Session | Mark all notifications as read |
+| `/metrics` | GET | Metrics token | Prometheus exposition for alert operations |
 
 ### Management rules
 
@@ -216,6 +254,8 @@ tokens while Anthropic and Google emit the full reply as one `delta`.
   is the bootstrap admin. In production, only allowlisted `ADMIN_EMAILS` can self-register as
   admins; later self-service accounts are viewers until promoted.
 - API keys are trusted internal clients and retain broad access without a role assignment.
+- The personal notification inbox requires a signed-in user session; API-key clients receive `403`.
+- `GET /metrics` uses `METRICS_TOKEN` and is disabled when no token is configured.
 
 ### Error handling
 
@@ -242,6 +282,7 @@ Provider errors are mapped to safe messages:
 | `/contracts` | Contract list with status/expiry filters and CRUD |
 | `/assignments` | Assignment list with status/active filters and CRUD |
 | `/performance` | Performance records with developer filter and CRUD |
+| `/notifications` | Alert notification inbox with unread filtering and read state |
 | `/admin/users` | Admin-only workspace user and role management |
 | `/admin/audit-logs` | Admin-only audit history browser |
 
@@ -270,6 +311,13 @@ API_KEY="long-random-string"
 CORS_ORIGINS="http://localhost:3000"
 TRUST_PROXY="false"
 CHAT_DAILY_QUOTA="200"
+ALERT_SCAN_INTERVAL_MS="60000"
+ALERT_LEASE_SECONDS="60"
+ALERT_WEBHOOK_URL=""
+ALERT_WEBHOOK_SECRET=""
+ALERT_WEBHOOK_TIMEOUT_MS="10000"
+ALERT_WEBHOOK_MAX_ATTEMPTS="5"
+METRICS_TOKEN=""
 ```
 
 ```env
@@ -300,6 +348,13 @@ the SQLite schema and verified in CI.
 - **Message** — role, content, optional tool-call JSON and tool-call ID
 - **ChatUsage** — subject (`user:<id>` or `api-key`), UTC day, request count (unique per subject/day)
 - **AuditLog** — actor, action, entity, request ID, before/after state, and timestamp
+- **StaffingAlert** — stable fingerprint, type, severity, open/resolved status, entity, message, data,
+  and first/last-seen timestamps
+- **AlertDelivery** — lifecycle event, event-time alert snapshot, delivery status, destination, attempt
+  count, next attempt, response status, error, and delivery timestamp
+- **Notification** — one in-app inbox item per alert lifecycle transition
+- **NotificationRead** — per-user notification read timestamp
+- **WorkerLease** — named lease owner, expiry, run count, timing, and last-error state
 
 The Better Auth **User** model also carries a workspace role. The oldest existing account is promoted
 to admin by the role migration so a deployed workspace does not lose access; other existing accounts
@@ -347,6 +402,7 @@ pnpm run test
 pnpm run test:e2e
 pnpm run test:e2e:web
 pnpm run agent:eval
+pnpm run worker:alerts:once
 pnpm run db:drift
 pnpm run db:postgres:check
 pnpm run build

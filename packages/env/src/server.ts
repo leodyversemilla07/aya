@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { csv, nodeEnvSchema } from './shared.js';
 import { loadRootEnv } from './shared.js';
 
+const emptyStringToUndefined = (value: unknown): unknown =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+
 const serverEnvSchema = z
   .object({
     NODE_ENV: nodeEnvSchema,
@@ -22,6 +25,16 @@ const serverEnvSchema = z
     LLM_MAX_TOKENS: z.coerce.number().int().positive().default(4096),
     AGENT_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
     CHAT_DAILY_QUOTA: z.coerce.number().int().min(0).default(200),
+    ALERT_SCAN_INTERVAL_MS: z.coerce.number().int().min(5_000).default(60_000),
+    ALERT_LEASE_SECONDS: z.coerce.number().int().min(10).default(60),
+    ALERT_WEBHOOK_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+    ALERT_WEBHOOK_SECRET: z.preprocess(
+      emptyStringToUndefined,
+      z.string().trim().min(16).optional(),
+    ),
+    ALERT_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(10_000),
+    ALERT_WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+    METRICS_TOKEN: z.preprocess(emptyStringToUndefined, z.string().trim().min(16).optional()),
     BETTER_AUTH_SECRET: z.string().trim().optional(),
     BETTER_AUTH_URL: z.string().url().default('http://localhost:3000'),
     API_URL: z.string().url().optional(),
@@ -34,6 +47,20 @@ const serverEnvSchema = z
         code: 'custom',
         path: ['CORS_ORIGINS'],
         message: 'Wildcard CORS origins are not allowed when credentialed CORS is enabled',
+      });
+    }
+    if (env.ALERT_WEBHOOK_URL && !env.ALERT_WEBHOOK_SECRET) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ALERT_WEBHOOK_SECRET'],
+        message: 'ALERT_WEBHOOK_SECRET is required when ALERT_WEBHOOK_URL is configured',
+      });
+    }
+    if (env.ALERT_WEBHOOK_SECRET && !env.ALERT_WEBHOOK_URL) {
+      context.addIssue({
+        code: 'custom',
+        path: ['ALERT_WEBHOOK_URL'],
+        message: 'ALERT_WEBHOOK_URL is required when ALERT_WEBHOOK_SECRET is configured',
       });
     }
     if (env.NODE_ENV === 'production') {

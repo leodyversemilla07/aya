@@ -67,6 +67,18 @@ test.describe('workspace roles', () => {
     });
     expect(viewerWrite).toBe(403);
 
+    const viewerAlertAdmin = await viewerPage.evaluate(async () => {
+      const [configResponse, scanResponse] = await Promise.all([
+        fetch('http://localhost:3001/admin/alerts/config', { credentials: 'include' }),
+        fetch('http://localhost:3001/admin/alerts/scan', {
+          method: 'POST',
+          credentials: 'include',
+        }),
+      ]);
+      return { config: configResponse.status, scan: scanResponse.status };
+    });
+    expect(viewerAlertAdmin).toEqual({ config: 403, scan: 403 });
+
     const managerContext = await browser.newContext({ baseURL: WEB_URL });
     const managerPage = await managerContext.newPage();
     await signUp(managerPage, { role: 'manager' });

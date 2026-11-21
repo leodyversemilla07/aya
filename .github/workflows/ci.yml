@@ -72,6 +72,11 @@ jobs:
         env:
           DATABASE_URL: file:./ci-e2e.db
 
+      - name: Background alert worker smoke test
+        run: pnpm run worker:alerts:once
+        env:
+          DATABASE_URL: file:./ci-e2e.db
+
       - name: Browser end-to-end tests
         run: pnpm --filter web run test:e2e
 
@@ -152,3 +157,6 @@ jobs:
 
       - name: Run API end-to-end tests against PostgreSQL
         run: pnpm --filter @aya/api run test:e2e
+
+      - name: Run background alert worker against PostgreSQL
+        run: pnpm run worker:alerts:once

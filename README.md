@@ -14,7 +14,7 @@
 [![NestJS](https://img.shields.io/badge/NestJS-11-e0234e?style=flat-square&logo=nestjs&logoColor=white)](https://nestjs.com)
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org)
 
-[Features](#features) · [Architecture](#architecture) · [Quick start](#quick-start) · [Configuration](#configuration) · [API](#api) · [Agent capabilities](#agent-capabilities) · [Scripts](#scripts)
+[Features](#features) · [Architecture](#architecture) · [Quick start](#quick-start) · [Configuration](#configuration) · [API](#api) · [Agent capabilities](#agent-capabilities) · [Background alerts](#background-alerts) · [Scripts](#scripts)
 
 </div>
 
@@ -43,6 +43,12 @@ days?"_ — and return ranked, explainable answers.
   developer or team.
 - **Proactive risk alerts** — surfaces bench time over 14 days, contracts expiring within 30 days
   (or recently expired), and performance concerns, ranked by severity.
+- **Durable background alerts** — a leased worker detects, deduplicates, resolves, and reopens alerts,
+  then sends signed webhook events with observable retry history.
+- **In-app alert inbox** — workspace notifications provide a bell badge, unread filtering, and
+  per-user read state without changing the underlying alert lifecycle.
+- **Prometheus metrics** — token-protected metrics expose worker lag, scan duration, alert
+  transitions, webhook attempts, and notification counts.
 - **Multi-turn conversations** — history is persisted in the database, streamed token by token, and
   shared across the dashboard and chat pages. Older messages load on demand and chats can be deleted.
 - **Management console** — create, edit, and delete developers, clients, contracts, assignments,
@@ -64,6 +70,8 @@ flowchart LR
   API --> Agent["Agent loop<br/>tool calling + Zod validation"]
   Agent --> LLM["@workspace/ai<br/>multi-provider LLM client"]
   Agent --> DB[("SQLite / PostgreSQL<br/>via Prisma 6")]
+  Worker["Alert worker<br/>scan + delivery lease"] --> DB
+  Worker --> Webhook["Signed webhook"]
 ```
 
 | Workspace | Description |
@@ -154,8 +162,9 @@ pnpm run build
 ```
 
 Start `pnpm --filter @aya/api run start:prod` and `pnpm --filter web run start` on your deployment
-platform. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the PostgreSQL migration workflow, health
-checks, quotas, logging, and reverse-proxy guidance.
+platform. Run `pnpm run worker:alerts:prod` as a separate process to enable proactive alert scans
+and webhook delivery. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the PostgreSQL migration
+workflow, health checks, quotas, logging, and reverse-proxy guidance.
 
 ## Configuration
 
@@ -188,6 +197,16 @@ API_KEYS="client-a-secret,client-b-secret"
 CORS_ORIGINS="http://localhost:3000"
 TRUST_PROXY="false"
 CHAT_DAILY_QUOTA="200"
+
+# Background alert worker (set URL and secret together to enable webhooks)
+ALERT_SCAN_INTERVAL_MS="60000"
+ALERT_LEASE_SECONDS="60"
+ALERT_WEBHOOK_URL=""
+ALERT_WEBHOOK_SECRET=""
+ALERT_WEBHOOK_TIMEOUT_MS="10000"
+ALERT_WEBHOOK_MAX_ATTEMPTS="5"
+METRICS_TOKEN=""
+
 NEXT_PUBLIC_API_URL="http://localhost:3001"
 ```
 
@@ -210,6 +229,13 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowlist. Do not use `*` with credentials. |
 | `TRUST_PROXY` | `false` | Set `true` when a trusted reverse proxy terminates TLS. |
 | `CHAT_DAILY_QUOTA` | `200` | Chat requests per user/API key per UTC day. `0` disables quotas. |
+| `ALERT_SCAN_INTERVAL_MS` | `60000` | Delay between background alert scans; minimum 5 seconds. |
+| `ALERT_LEASE_SECONDS` | `60` | Database worker lease duration; minimum 10 seconds. |
+| `ALERT_WEBHOOK_URL` | — | Endpoint for signed alert lifecycle events. Requires `ALERT_WEBHOOK_SECRET`. |
+| `ALERT_WEBHOOK_SECRET` | — | HMAC-SHA256 secret, at least 16 characters. Requires `ALERT_WEBHOOK_URL`. |
+| `ALERT_WEBHOOK_TIMEOUT_MS` | `10000` | Per-request webhook timeout. |
+| `ALERT_WEBHOOK_MAX_ATTEMPTS` | `5` | Maximum attempts for a failed delivery. |
+| `METRICS_TOKEN` | — | Optional token for `GET /metrics`; at least 16 characters. The endpoint is disabled when unset. |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Only browser-exposed value. |
 | `SEED_FORCE` | `false` | Allow seeding when `NODE_ENV=production`. |
 | `SEED_RESET_CONVERSATIONS` | `false` | Also reset conversations when seeding. |
@@ -250,6 +276,15 @@ raw keys are never stored. `API_KEYS` may be used instead of or alongside the le
 | `/admin/users` | `GET` | Admin | List workspace users and roles |
 | `/admin/users/:id/role` | `PATCH` | Admin | Change a workspace user's role |
 | `/admin/audit-logs` | `GET` | Admin | Browse mutation and access audit history |
+| `/alerts` | `GET` | Session / API key | List persisted staffing alert state |
+| `/alerts/deliveries` | `GET` | Admin | Inspect webhook delivery attempts and failures |
+| `/admin/alerts/config` | `GET` | Admin | Inspect effective alert rules and delivery configuration |
+| `/admin/alerts/scan` | `POST` | Admin | Trigger an immediate, audited alert scan |
+| `/notifications` | `GET` | Session | List the signed-in user's notification inbox |
+| `/notifications/unread-count` | `GET` | Session | Get the signed-in user's unread count |
+| `/notifications/:id/read` | `POST` | Session | Mark one notification as read |
+| `/notifications/read-all` | `POST` | Session | Mark all notifications as read |
+| `/metrics` | `GET` | Metrics token | Prometheus exposition for alert operations |
 
 ### Chat request
 
@@ -374,6 +409,10 @@ Aya can call six tools autonomously:
 | `get_performance` | Developer or team performance data |
 | `get_alerts` | Proactive risk alerts (bench time, expiring contracts, performance) |
 
+`get_alerts` and the background worker use the same alert query service, so chat answers and
+proactive detection follow one set of rules. See
+[Background alerts](docs/BACKGROUND_ALERTS.md) for lifecycle, webhook, and worker operations.
+
 ```
 User query → LLM reasoning → tool call → Zod validation → database query → formatted response
 ```
@@ -385,6 +424,26 @@ turn has a total deadline and is cancelled if the client disconnects, and only t
 user/assistant messages (up to 40,000 characters) are replayed to the model. Tool calls and results
 are stored for auditability. The system prompt includes today's date so expiry reasoning is
 deterministic.
+
+### Background alerts
+
+The alert worker evaluates the same rules as the `get_alerts` tool, persists one lifecycle row per
+condition, and sends optional signed webhook events. It uses a database lease so concurrent workers
+skip an active iteration and atomic delivery claims so one event is not sent concurrently. Resolved
+alerts remain visible and reopen with a new event if the condition returns.
+
+Each transition also creates an in-app notification. Workspace users can review the inbox, filter
+unread items, and persist per-user read state. When `METRICS_TOKEN` is configured, `GET /metrics`
+exposes worker lag, scan duration, lifecycle transitions, delivery attempts, and inbox counts in
+Prometheus format.
+
+```bash
+pnpm run worker:alerts:once  # one scan and delivery iteration
+pnpm run worker:alerts        # continuous development worker
+```
+
+See [Background alerts](docs/BACKGROUND_ALERTS.md) for detection rules, webhook payloads, signature
+verification, retries, and deployment guidance.
 
 ### Agent evaluations
 
@@ -408,7 +467,8 @@ Prisma schema and `DATABASE_URL` select the schema and migration directory autom
 generated `packages/db/prisma/schema.postgresql.prisma` is checked in and verified in CI.
 
 Core models: **Developer**, **Skill**, **Client**, **Contact**, **Assignment**, **Contract**,
-**Performance**, **Conversation**, **Message**, **ChatUsage**, and **AuditLog**, plus Better Auth
+**Performance**, **Conversation**, **Message**, **ChatUsage**, **AuditLog**, **StaffingAlert**,
+**AlertDelivery**, **Notification**, **NotificationRead**, and **WorkerLease**, plus Better Auth
 **User**, **Session**, and **Account** tables. The user model carries the workspace role, and audit
 entries preserve the actor snapshot even if the acting user is later removed. Indexes cover common
 filters such as developer name/seniority/bench, skill name, client industry, assignment and contract
@@ -442,6 +502,10 @@ pnpm run db:studio    # browse data in Prisma Studio
 | `pnpm run test:e2e:web` | Playwright browser tests against the production build |
 | `pnpm run agent:eval` | Run deterministic agent evaluation scenarios |
 | `pnpm run agent:eval:live` | Run agent evaluations against the configured LLM provider |
+| `pnpm run worker:alerts` | Run the background alert worker in development |
+| `pnpm run worker:alerts:once` | Run one background alert scan and delivery iteration |
+| `pnpm run worker:alerts:prod` | Run the compiled background alert worker |
+| `pnpm run worker:alerts:prod:once` | Run one compiled alert scan and delivery iteration |
 | `pnpm run audit` | Audit production dependencies |
 | `pnpm run audit:all` | Audit all dependencies, including tooling |
 | `pnpm run db:generate` | Generate the Prisma client |
@@ -466,8 +530,8 @@ pnpm run agent:eval    # deterministic agent behavior benchmark
 The web app uses **Vitest** with React Testing Library and jsdom for unit and component tests.
 `pnpm run test:e2e:web` builds the workspace and then runs **Playwright** against the production
 build. Playwright starts the API and web servers itself, seeds `packages/db/prisma/playwright.db`,
-and covers sign-up/sign-in, session redirects, dashboard data, chat rendering, chat errors, and
-management console CRUD. The
+and covers sign-up/sign-in, session redirects, dashboard data, chat rendering, chat errors, the
+notification inbox and read state, and management console CRUD. The
 LLM is mocked in the browser, so no provider calls are made. Install the browser once with:
 
 ```bash
@@ -478,7 +542,9 @@ The API e2e suite uses `file:./test-e2e.db` (`packages/db/prisma/test-e2e.db`) a
 migrations automatically, so no manual database setup is required. Tests do not call a real LLM —
 they cover public health/readiness routes, request validation, API-key enforcement, a mocked agent
 tool-call loop, bounded conversation pagination, canonical skill matching, staffing-state rules,
-ambiguous client names, role enforcement, administration, audit history, and management CRUD
+ambiguous client names, role enforcement, administration, audit history, background alert lifecycle,
+in-app notification read state, signed webhook retries, worker leases, Prometheus metrics, and
+management CRUD
 (validation, unique conflicts, cascade deletes, skill canonicalization, and bench-state
 reconciliation).
 
@@ -489,8 +555,8 @@ network access. Live mode uses the configured provider and reports the same metr
 and latency.
 
 CI runs audit, migration drift checks, lint, typecheck, unit tests, the deterministic agent
-evaluation benchmark, SQLite and PostgreSQL-backed API e2e tests, Playwright browser tests, and the
-production build on Node.js 24 with pnpm 12.16.
+evaluation benchmark, SQLite and PostgreSQL-backed API e2e tests, background worker smoke tests,
+Playwright browser tests, and the production build on Node.js 24 with pnpm 12.16.
 The PostgreSQL job also verifies migrations and schema drift against a clean database.
 
 ## LLM providers
@@ -518,6 +584,8 @@ application needs more than the environment-selected provider.
 - Run `pnpm run build`; Turborepo compiles `@workspace/db` to `packages/db/dist` so the API runs on
   Node.js without a TypeScript loader.
 - The web app reads `NEXT_PUBLIC_API_URL` at build time for direct browser API calls.
+- Run `pnpm run worker:alerts:prod` as a separate process when proactive scans or webhook delivery
+  are required. Multiple workers coordinate through a PostgreSQL lease.
 
 See [Production deployment](docs/DEPLOYMENT.md) for PostgreSQL setup, quotas, structured logging,
 SSE proxy settings, and the migration workflow.
@@ -530,5 +598,6 @@ SSE proxy settings, and the migration workflow.
 
 - [Development setup](docs/DEVELOPMENT_SETUP.md) — local environment, testing, and troubleshooting
 - [Agent evaluations](docs/AGENT_EVALUATIONS.md) — benchmark modes, metrics, scenarios, and reports
+- [Background alerts](docs/BACKGROUND_ALERTS.md) — alert rules, worker operation, and signed webhooks
 - [Project specification](docs/SPEC.md) — features, architecture, data model, and success criteria
 - [Brand guide](docs/BRAND.md) — logo variants, color, typography, and usage rules

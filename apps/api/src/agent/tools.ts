@@ -1,5 +1,6 @@
 import { type Prisma, containsIgnoreCase, prisma } from '@workspace/db';
 import { z } from 'zod';
+import { queryStaffingAlerts } from '../alerts/alert-query';
 import { canonicalizeSkillName, skillNamesMatch } from '../domain/skills';
 import {
   OCCUPIED_ASSIGNMENT_STATUSES,
@@ -584,142 +585,14 @@ async function getPerformanceHandler(args: z.infer<typeof schemas.get_performanc
   }));
 }
 
-type Alert = {
-  type: 'bench' | 'contract' | 'performance';
-  severity: 'high' | 'medium' | 'low';
-  message: string;
-  data: Record<string, unknown>;
-};
-
 async function getAlertsHandler(args: z.infer<typeof schemas.get_alerts>) {
-  const today = startOfToday();
-  const alerts: Alert[] = [];
-  const alertType = args.type ?? 'all';
-
-  if (alertType === 'all' || alertType === 'bench') {
-    const benchDevelopers = await prisma.developer.findMany({
-      where: {
-        benchSince: { not: null },
-        assignments: {
-          none: occupiedAssignmentWhere(today),
-        },
-      },
-      orderBy: { benchSince: 'asc' },
-    });
-
-    for (const developer of benchDevelopers) {
-      if (!developer.benchSince) continue;
-      const daysOnBench = daysBetween(developer.benchSince, today);
-      if (daysOnBench > 14) {
-        alerts.push({
-          type: 'bench',
-          severity: daysOnBench > 30 ? 'high' : 'medium',
-          message: `${developer.name} has been on the bench for ${daysOnBench} days`,
-          data: { developerId: developer.id, daysOnBench, benchSince: developer.benchSince },
-        });
-      }
-    }
-  }
-
-  if (alertType === 'all' || alertType === 'contract') {
-    const contracts = await prisma.contract.findMany({
-      where: {
-        status: { in: ['active', 'renewing', 'expired'] },
-        startDate: { lte: today },
-        // Keep recently expired contracts actionable without retaining every
-        // historical expiry as a permanent alert.
-        endDate: {
-          gte: addDays(today, -30),
-          lte: addDays(today, 30),
-        },
-      },
-      include: { developer: true, client: true },
-      orderBy: { endDate: 'asc' },
-    });
-
-    for (const contract of contracts) {
-      const daysLeft = daysBetween(today, contract.endDate);
-      const severity: Alert['severity'] = daysLeft < 7 ? 'high' : 'medium';
-      const message =
-        daysLeft < 0
-          ? `${contract.developer.name}'s contract at ${contract.client.name} expired ${Math.abs(
-              daysLeft,
-            )} days ago`
-          : `${contract.developer.name}'s contract at ${contract.client.name} expires in ${daysLeft} days`;
-
-      alerts.push({
-        type: 'contract',
-        severity,
-        message,
-        data: {
-          contractId: contract.id,
-          developerId: contract.developerId,
-          clientId: contract.clientId,
-          daysLeft,
-          endDate: contract.endDate,
-        },
-      });
-    }
-  }
-
-  if (alertType === 'all' || alertType === 'performance') {
-    const performances = await prisma.performance.findMany({
-      include: { developer: true },
-      orderBy: { createdAt: 'desc' },
-      take: 200,
-    });
-
-    const latestByDeveloper = new Map<string, (typeof performances)[number]>();
-    for (const performance of performances) {
-      if (!latestByDeveloper.has(performance.developerId)) {
-        latestByDeveloper.set(performance.developerId, performance);
-      }
-    }
-
-    for (const performance of latestByDeveloper.values()) {
-      const issues: string[] = [];
-      if (performance.codeQuality < 80) {
-        issues.push(`code quality is ${performance.codeQuality}/100`);
-      }
-      if (performance.prMergeTime > 3) {
-        issues.push(`PR merge time is ${performance.prMergeTime} days`);
-      }
-      if (performance.clientRating !== null && performance.clientRating < 3.5) {
-        issues.push(`client rating is ${performance.clientRating}/5`);
-      }
-      if (issues.length === 0) continue;
-
-      const severity: Alert['severity'] =
-        performance.codeQuality < 70 ||
-        performance.prMergeTime > 5 ||
-        (performance.clientRating !== null && performance.clientRating < 3)
-          ? 'high'
-          : 'medium';
-
-      alerts.push({
-        type: 'performance',
-        severity,
-        message: `${performance.developer.name} needs attention: ${issues.join(', ')}`,
-        data: {
-          developerId: performance.developerId,
-          period: performance.period,
-          codeQuality: performance.codeQuality,
-          prMergeTime: performance.prMergeTime,
-          clientRating: performance.clientRating,
-        },
-      });
-    }
-  }
-
-  const severityOrder: Record<Alert['severity'], number> = { high: 0, medium: 1, low: 2 };
-  alerts.sort(
-    (a, b) =>
-      severityOrder[a.severity] - severityOrder[b.severity] ||
-      a.type.localeCompare(b.type) ||
-      a.message.localeCompare(b.message),
-  );
-
-  return alerts;
+  const alerts = await queryStaffingAlerts(args.type ?? 'all');
+  return alerts.map(({ type, severity, message, data }) => ({
+    type,
+    severity,
+    message,
+    data,
+  }));
 }
 
 // ─── Tool Router ──────────────────────────────────────

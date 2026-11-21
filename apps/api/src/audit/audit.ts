@@ -9,7 +9,7 @@ export interface AuditActor {
 }
 
 export interface AuditEvent {
-  action: 'create' | 'update' | 'delete';
+  action: 'create' | 'update' | 'delete' | 'scan';
   entityType: string;
   entityId: string;
   before?: unknown;

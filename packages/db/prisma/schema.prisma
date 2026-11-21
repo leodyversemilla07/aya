@@ -8,18 +8,19 @@ datasource db {
 }
 
 model User {
-  id            String         @id
-  name          String
-  email         String         @unique
-  emailVerified Boolean        @default(false)
-  image         String?
-  role          String         @default("viewer") // admin, manager, viewer
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  sessions      Session[]
-  accounts      Account[]
-  conversations Conversation[]
-  auditLogs     AuditLog[]
+  id                String             @id
+  name              String
+  email             String             @unique
+  emailVerified     Boolean            @default(false)
+  image             String?
+  role              String             @default("viewer") // admin, manager, viewer
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  sessions          Session[]
+  accounts          Account[]
+  conversations     Conversation[]
+  auditLogs         AuditLog[]
+  notificationReads NotificationRead[]
 
   @@map("user")
 }
@@ -72,19 +73,19 @@ model Verification {
 }
 
 model Developer {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   name        String
-  email       String   @unique
+  email       String        @unique
   role        String
-  seniority   String   // junior, mid, senior, lead
+  seniority   String // junior, mid, senior, lead
   avatarUrl   String?
   benchSince  DateTime?
   skills      Skill[]
   assignments Assignment[]
   contracts   Contract[]
   performance Performance[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   @@index([name])
   @@index([seniority])
@@ -150,11 +151,11 @@ model Assignment {
 }
 
 model Contract {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   startDate   DateTime
   endDate     DateTime
   billingRate Decimal // monthly rate
-  status      String   @default("active") // active, renewing, expired
+  status      String    @default("active") // active, renewing, expired
   developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
   developerId String
   client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -168,7 +169,7 @@ model Contract {
 }
 
 model Performance {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   period       String // "2026-Q1", "2026-03"
   velocity     Float // story points per sprint
   prMergeTime  Float // avg days to merge PR
@@ -177,7 +178,7 @@ model Performance {
   notes        String?
   developer    Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
   developerId  String
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   @@unique([developerId, period])
   @@index([period])
@@ -185,15 +186,15 @@ model Performance {
 }
 
 model Conversation {
-  id        String    @id @default(cuid())
-  title     String?
+  id            String    @id @default(cuid())
+  title         String?
   // Session user IDs and hashed API-key identities both use this scope.
   accessSubject String?
-  messages  Message[]
-  user      User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  messages      Message[]
+  user          User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([updatedAt])
   @@index([accessSubject])
@@ -244,4 +245,93 @@ model AuditLog {
   @@index([actorId, createdAt])
   @@index([entityType, entityId])
   @@index([action])
+}
+
+model StaffingAlert {
+  id            String          @id @default(cuid())
+  fingerprint   String          @unique
+  type          String // bench, contract, performance
+  severity      String // high, medium, low
+  status        String          @default("open") // open, resolved
+  entityType    String // developer, contract
+  entityId      String
+  message       String
+  data          String          @default("{}")
+  firstSeenAt   DateTime        @default(now())
+  lastSeenAt    DateTime        @default(now())
+  resolvedAt    DateTime?
+  lastEventAt   DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  deliveries    AlertDelivery[]
+  notifications Notification[]
+
+  @@index([status, lastSeenAt])
+  @@index([type, severity])
+  @@index([entityType, entityId])
+}
+
+model AlertDelivery {
+  id             String        @id @default(cuid())
+  alertId        String
+  event          String // opened, updated, reopened, resolved
+  snapshot       String // JSON snapshot of alert state at event time
+  status         String        @default("pending") // pending, processing, succeeded, failed
+  destination    String?
+  attemptCount   Int           @default(0)
+  nextAttemptAt  DateTime      @default(now())
+  lastError      String?
+  responseStatus Int?
+  deliveredAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  alert          StaffingAlert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  notification   Notification?
+
+  @@index([alertId, createdAt])
+  @@index([status, nextAttemptAt])
+}
+
+model Notification {
+  id         String             @id @default(cuid())
+  alertId    String
+  deliveryId String             @unique
+  event      String
+  severity   String
+  title      String
+  message    String
+  createdAt  DateTime           @default(now())
+  alert      StaffingAlert      @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  delivery   AlertDelivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  reads      NotificationRead[]
+
+  @@index([createdAt])
+  @@index([severity, createdAt])
+}
+
+model NotificationRead {
+  notificationId String
+  userId         String
+  readAt         DateTime     @default(now())
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([notificationId, userId])
+  @@index([userId, readAt])
+}
+
+model WorkerLease {
+  name               String    @id
+  ownerId            String?
+  expiresAt          DateTime
+  runCount           Int       @default(0)
+  lastRunAt          DateTime?
+  lastSuccessAt      DateTime?
+  lastDurationMs     Int?
+  lastScanDurationMs Int?
+  lastError          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([expiresAt])
 }

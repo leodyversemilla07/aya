@@ -90,6 +90,13 @@ API_KEY="change-me-to-a-long-random-string"
 CORS_ORIGINS="http://localhost:3000"
 TRUST_PROXY="false"
 CHAT_DAILY_QUOTA="200"
+ALERT_SCAN_INTERVAL_MS="60000"
+ALERT_LEASE_SECONDS="60"
+ALERT_WEBHOOK_URL=""
+ALERT_WEBHOOK_SECRET=""
+ALERT_WEBHOOK_TIMEOUT_MS="10000"
+ALERT_WEBHOOK_MAX_ATTEMPTS="5"
+METRICS_TOKEN=""
 BETTER_AUTH_SECRET="replace-with-a-random-32-byte-secret"
 BETTER_AUTH_URL="http://localhost:3000"
 ADMIN_EMAILS="admin@example.com"
@@ -107,6 +114,9 @@ ADMIN_EMAILS="admin@example.com"
 - `ADMIN_EMAILS` is a comma-separated production allowlist for administrator self-registration.
 - `CORS_ORIGINS` is a comma-separated allowlist. Use explicit web origins when sending
   credentialed Better Auth requests; do not use `*` with credentials.
+- `ALERT_WEBHOOK_URL` and `ALERT_WEBHOOK_SECRET` must be set together to deliver alert events.
+  Leave both empty to run scans without external delivery.
+- `METRICS_TOKEN` enables the token-protected Prometheus endpoint when set to at least 16 characters.
 
 The root `.env` is loaded by the API, web build, Prisma CLI, and seed process. Only
 `NEXT_PUBLIC_API_URL` is exposed to browser code; keep all secrets server-only.
@@ -118,6 +128,8 @@ apps/
   api/
     src/
       agent/        Agent controller, loop, and tools
+      alerts/       Shared alert query, scanner, worker, and webhook delivery
+      notifications/ Notification inbox and per-user read state
       domain/       Shared staffing and date rules
       auth/         API-key guard and public-route decorator
       llm/          OpenAI-compatible provider client
@@ -156,6 +168,10 @@ packages/
 | `pnpm run test:e2e:web` | Playwright browser tests against the production build |
 | `pnpm run agent:eval` | Run deterministic agent evaluation scenarios |
 | `pnpm run agent:eval:live` | Run agent evaluations against the configured LLM provider |
+| `pnpm run worker:alerts` | Run the background alert worker in development |
+| `pnpm run worker:alerts:once` | Run one background scan and delivery iteration |
+| `pnpm run worker:alerts:prod` | Run the compiled background alert worker |
+| `pnpm run worker:alerts:prod:once` | Run one compiled alert scan and delivery iteration |
 | `pnpm run db:generate` | Generate the Prisma client |
 | `pnpm run db:push` | Push the Prisma schema to the local database |
 | `pnpm run db:migrate` | Create a development migration |
@@ -194,8 +210,9 @@ pnpm --filter web exec playwright install chromium
 
 The tests do not call a real LLM. They cover public health/readiness routes, request validation,
 API-key enforcement, a mocked agent tool-call loop, bounded conversation pagination, canonical
-skill matching, staffing-state rules, ambiguous client names, role enforcement, administration, and
-audit history.
+skill matching, staffing-state rules, ambiguous client names, role enforcement, administration, audit
+history, durable alert lifecycle, notification read state, worker leases, signed webhook retries,
+and Prometheus metrics.
 
 `pnpm run agent:eval` creates and seeds the disposable
 `packages/db/prisma/agent-eval.db` database, then runs 12 replay scenarios through the real agent
@@ -203,6 +220,23 @@ loop and database tools. It requires no provider key or network access and fails
 baseline regresses. `pnpm run agent:eval:live` runs the same assertions against the provider in the
 root `.env`; live calls can consume tokens and are not run by CI. See
 [Agent evaluations](./AGENT_EVALUATIONS.md) for scenario coverage, reports, and iteration commands.
+
+## Background alert worker
+
+The API and worker share the same alert query service. Run one scan manually after applying
+migrations:
+
+```bash
+pnpm run db:migrate:deploy
+pnpm run worker:alerts:once
+```
+
+Run the continuous development worker with `pnpm run worker:alerts`. It records alert state even
+when no webhook is configured, and creates notifications for the signed-in web inbox. To test
+external delivery, set `ALERT_WEBHOOK_URL` and `ALERT_WEBHOOK_SECRET` together in the root `.env`.
+Set `METRICS_TOKEN` to test the Prometheus endpoint. See
+[Background alerts](./BACKGROUND_ALERTS.md) for rules, webhook payloads, signature verification,
+inbox behavior, metrics, and deployment guidance.
 
 ## Authentication, roles, and API flow
 
@@ -243,5 +277,9 @@ and timeout failures produce actionable messages.
   request includes credentials.
 - **`LLM_API_KEY is not configured`**: add a provider key to `.env`; the API itself
   starts without it, but chat requests will return 503.
+- **Background worker cannot find alert tables**: apply `pnpm run db:migrate:deploy` and confirm the
+  worker and API use the same `DATABASE_URL`.
+- **Webhook deliveries remain pending**: configure both `ALERT_WEBHOOK_URL` and
+  `ALERT_WEBHOOK_SECRET`, then inspect `/alerts/deliveries` for the next attempt and last error.
 - **`@workspace/db` fails to load under Node.js**: run `pnpm run build` so `packages/db/dist`
   exists, and start the API from the repository root or a workspace-aware context.

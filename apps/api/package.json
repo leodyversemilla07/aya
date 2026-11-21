@@ -17,7 +17,9 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
-    "agent:eval": "tsx src/agent/evaluation/cli.ts"
+    "agent:eval": "tsx src/agent/evaluation/cli.ts",
+    "worker:alerts": "tsx src/alerts/worker.ts",
+    "worker:alerts:prod": "node dist/alerts/worker.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.2.8",

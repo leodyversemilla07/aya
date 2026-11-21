@@ -3,12 +3,15 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AdminModule } from './admin/admin.module';
 import { AgentModule } from './agent/agent.module';
+import { AlertsModule } from './alerts/alerts.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ApiKeyGuard } from './auth/api-key.guard';
 import { AuthController } from './auth/auth.controller';
 import { ManagementModule } from './management/management.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { AllExceptionsFilter } from './observability/all-exceptions.filter';
+import { MetricsModule } from './observability/metrics.module';
 import { requestIdMiddleware } from './observability/request-logger';
 
 @Module({
@@ -21,8 +24,11 @@ import { requestIdMiddleware } from './observability/request-logger';
       },
     ]),
     AgentModule,
+    AlertsModule,
     ManagementModule,
+    NotificationsModule,
     AdminModule,
+    MetricsModule,
   ],
   controllers: [AppController, AuthController],
   providers: [

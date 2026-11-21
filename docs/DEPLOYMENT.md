@@ -2,6 +2,8 @@
 
 Aya runs as two stateless application processes (NestJS API and Next.js web) backed by PostgreSQL.
 Chat usage counters are stored in the database, so quotas survive restarts and work across replicas.
+A third alert-worker process enables proactive scans and signed webhook delivery; it coordinates with
+other replicas through a database lease.
 
 ## PostgreSQL deployment
 
@@ -22,6 +24,12 @@ In a second terminal, start the web application:
 
 ```bash
 pnpm --filter web run start
+```
+
+In a third terminal, start the alert worker when proactive detection is required:
+
+```bash
+pnpm run worker:alerts:prod
 ```
 
 Prisma selects `packages/db/prisma/schema.postgresql.prisma` and
@@ -66,6 +74,11 @@ Never use `prisma migrate dev` against production. Deploy with `prisma migrate d
 | `LLM_API_KEY` | Provider key. |
 | `TRUST_PROXY` | `true` only behind a trusted reverse proxy. |
 | `CHAT_DAILY_QUOTA` | Requests per user/API key per UTC day; `0` disables. |
+| `ALERT_SCAN_INTERVAL_MS` | Optional background scan interval; defaults to 60 seconds. |
+| `ALERT_LEASE_SECONDS` | Optional worker lease duration; defaults to 60 seconds. |
+| `ALERT_WEBHOOK_URL` | Optional signed alert event endpoint. |
+| `ALERT_WEBHOOK_SECRET` | Optional HMAC-SHA256 secret; required with `ALERT_WEBHOOK_URL`. |
+| `METRICS_TOKEN` | Optional Prometheus scrape token; at least 16 characters. Disables `/metrics` when unset. |
 
 ## Workspace access and audit history
 
@@ -86,6 +99,41 @@ Successful staffing and role mutations write an `AuditLog` row in the same trans
 change. Each row stores the actor, action, entity, request ID, timestamp, and before/after state.
 Apply an organization-appropriate retention policy to this table if it will be used for long-term
 compliance reporting.
+
+## Background alert worker
+
+The worker scans staffing risks on a schedule, persists one row per alert condition, and delivers
+lifecycle events to an optional webhook. The agent's `get_alerts` tool and the worker use the same
+rule service.
+
+Set both webhook values to enable delivery:
+
+```env
+ALERT_WEBHOOK_URL="https://alerts.example.com/aya"
+ALERT_WEBHOOK_SECRET="replace-with-at-least-16-random-characters"
+```
+
+The worker sends signed JSON events with a stable delivery ID. It retries network failures,
+timeouts, and non-`2xx` responses with exponential backoff. Delivery is at least once, so receivers
+must deduplicate by `x-aya-delivery-id`. See
+[Background alerts](./BACKGROUND_ALERTS.md) for the payload, signature verification, lifecycle, and
+runbook.
+
+Deploy one worker process per database-backed environment. Additional replicas are safe: a
+PostgreSQL lease allows only one iteration at a time, and delivery rows are claimed atomically.
+Monitor the worker process and query `GET /alerts/deliveries` as an administrator to inspect failed
+or delayed deliveries.
+
+Each transition also creates an in-app notification. Users can review these at `/notifications`;
+read state is stored per account. Configure `METRICS_TOKEN` to expose Prometheus metrics:
+
+```bash
+curl https://aya.example.com/metrics \
+  -H "Authorization: Bearer $METRICS_TOKEN"
+```
+
+The metrics endpoint reports worker lag and duration, lifecycle transitions, delivery attempts,
+notification counts, and current open/resolved alert counts.
 
 ## Chat quotas
 
@@ -145,6 +193,11 @@ The streaming endpoint sends `text/event-stream` with a `: ping` comment every 1
 | Liveness | `GET /health` |
 | Database readiness | `GET /ready` |
 | Apply migrations | `pnpm run db:migrate:deploy` |
+| Run one alert iteration | `pnpm run worker:alerts:prod:once` |
+| Inspect alert state | `GET /alerts` |
+| Inspect delivery attempts | `GET /alerts/deliveries` |
+| Inspect the notification inbox | `GET /notifications` |
+| Scrape alert metrics | `GET /metrics` with `METRICS_TOKEN` |
 | PostgreSQL schema sync check | `pnpm run db:postgres:check` |
 | SQLite migration drift | `pnpm run db:drift` |
 

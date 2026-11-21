@@ -9,8 +9,10 @@ import type {
   DashboardStats,
   DeveloperDetail,
   DeveloperSummary,
+  NotificationList,
   Paginated,
   PerformanceRecord,
+  UnreadNotificationCount,
 } from './types';
 
 function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
@@ -70,6 +72,8 @@ export const queryKeys = {
   contracts: (query: ContractQuery) => ['contracts', query] as const,
   assignments: (query: AssignmentQuery) => ['assignments', query] as const,
   performance: (query: PerformanceQuery) => ['performance', query] as const,
+  notifications: ['notifications'] as const,
+  notificationUnreadCount: ['notifications', 'unread-count'] as const,
 };
 
 export function conversationsQuery() {
@@ -148,5 +152,21 @@ export function performanceQuery(query: PerformanceQuery) {
     queryKey: queryKeys.performance(query),
     queryFn: ({ signal }: { signal: AbortSignal }) =>
       getJson<Paginated<PerformanceRecord>>(`/performance${buildQuery({ ...query })}`, signal),
+  };
+}
+
+export function notificationsQuery(unreadOnly = false) {
+  return {
+    queryKey: [...queryKeys.notifications, { unreadOnly }] as const,
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      getJson<NotificationList>(`/notifications${buildQuery({ unreadOnly })}`, signal),
+  };
+}
+
+export function notificationUnreadCountQuery() {
+  return {
+    queryKey: queryKeys.notificationUnreadCount,
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      getJson<UnreadNotificationCount>('/notifications/unread-count', signal),
   };
 }

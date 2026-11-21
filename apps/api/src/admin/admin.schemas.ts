@@ -13,7 +13,7 @@ export const updateUserRoleSchema = z.object({
 });
 
 export const auditLogListQuerySchema = z.object({
-  action: z.enum(['create', 'update', 'delete']).optional(),
+  action: z.enum(['create', 'update', 'delete', 'scan']).optional(),
   entityType: z.string().trim().max(80).optional(),
   entityId: z.string().trim().max(120).optional(),
   actorId: z.string().trim().max(120).optional(),

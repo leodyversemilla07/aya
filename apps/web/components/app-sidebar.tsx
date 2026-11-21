@@ -1,6 +1,8 @@
 'use client';
 
 import { useWorkspaceAccess } from '@/lib/access';
+import { notificationUnreadCountQuery } from '@/lib/queries';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@workspace/ui/components/button';
 import {
   Sidebar,
@@ -13,6 +15,7 @@ import {
 import {
   AlertTriangle,
   BarChart3,
+  Bell,
   Briefcase,
   Building2,
   FileText,
@@ -36,6 +39,7 @@ import { TeamSwitcher } from './team-switcher';
 const navigation = [
   { title: 'Dashboard', url: '/', icon: Home },
   { title: 'Chat', url: '/chat', icon: MessageSquare },
+  { title: 'Notifications', url: '/notifications', icon: Bell },
 ];
 
 const management = [
@@ -59,6 +63,10 @@ const capabilities = [
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { isAdmin } = useWorkspaceAccess();
+  const unreadNotifications = useQuery({
+    ...notificationUnreadCountQuery(),
+    refetchInterval: 30_000,
+  });
   const { isMobile, setOpenMobile } = useSidebar();
   const pathname = usePathname();
   const router = useRouter();
@@ -98,7 +106,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             <span className="group-data-[collapsible=icon]:hidden">New Chat</span>
           </Button>
         </div>
-        <NavMain items={navigation.map((item) => ({ ...item, isActive: pathname === item.url }))} />
+        <NavMain
+          items={navigation.map((item) => ({
+            ...item,
+            isActive: pathname === item.url || pathname.startsWith(`${item.url}/`),
+            badge: item.url === '/notifications' ? unreadNotifications.data?.unread : undefined,
+          }))}
+        />
         <NavMain
           label="Manage"
           items={management.map((item) => ({

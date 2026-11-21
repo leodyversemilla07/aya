@@ -1,5 +1,6 @@
 'use client';
 
+import { Badge } from '@workspace/ui/components/badge';
 import {
   Collapsible,
   CollapsibleContent,
@@ -24,6 +25,7 @@ export type NavMainItem = {
   icon: LucideIcon;
   isActive?: boolean;
   onClick?: () => void;
+  badge?: number;
   items?: { title: string; url: string; onClick?: () => void }[];
 };
 
@@ -56,6 +58,14 @@ export function NavMain({ items, label = 'Platform' }: { items: NavMainItem[]; l
                     <Link href={item.url} onClick={item.onClick}>
                       <item.icon />
                       <span>{item.title}</span>
+                      {item.badge && item.badge > 0 ? (
+                        <Badge
+                          variant="secondary"
+                          className="ml-auto px-1.5 py-0 text-[10px] group-data-[collapsible=icon]:hidden"
+                        >
+                          {item.badge > 99 ? '99+' : item.badge}
+                        </Badge>
+                      ) : null}
                     </Link>
                   )}
                 </SidebarMenuButton>
