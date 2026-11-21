@@ -40,3 +40,6 @@ pnpm-debug.log*
 .DS_Store
 *.pem
 *.db
+
+# UI migration scratch (golden files, reports)
+.migration/

@@ -83,7 +83,7 @@ export function AssignmentsPage() {
       }
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={status} onValueChange={setStatus}>
+        <Select value={status} onValueChange={(value) => setStatus(value ?? 'all')}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
@@ -96,7 +96,7 @@ export function AssignmentsPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={active} onValueChange={setActive}>
+        <Select value={active} onValueChange={(value) => setActive(value ?? 'all')}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>

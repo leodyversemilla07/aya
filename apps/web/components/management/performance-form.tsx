@@ -118,7 +118,7 @@ function PerformanceForm({
       <FormError message={error} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Developer">
-          <Select value={developerId} onValueChange={setDeveloperId}>
+          <Select value={developerId} onValueChange={(value) => setDeveloperId(value ?? '')}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select developer" />
             </SelectTrigger>

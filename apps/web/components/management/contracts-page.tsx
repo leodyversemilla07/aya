@@ -81,7 +81,7 @@ export function ContractsPage() {
       }
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={status} onValueChange={setStatus}>
+        <Select value={status} onValueChange={(value) => setStatus(value ?? 'all')}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
@@ -92,7 +92,7 @@ export function ContractsPage() {
             <SelectItem value="expired">Expired</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={expiring} onValueChange={setExpiring}>
+        <Select value={expiring} onValueChange={(value) => setExpiring(value ?? 'all')}>
           <SelectTrigger className="w-48">
             <SelectValue />
           </SelectTrigger>

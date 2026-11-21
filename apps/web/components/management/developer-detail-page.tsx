@@ -47,11 +47,15 @@ export function DeveloperDetailPage({ id }: { id: string }) {
   });
 
   const back = (
-    <Button type="button" variant="ghost" size="sm" asChild>
-      <Link href="/developers">
-        <ArrowLeft />
-        Back to developers
-      </Link>
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      nativeButton={false}
+      render={<Link href="/developers" />}
+    >
+      <ArrowLeft />
+      Back to developers
     </Button>
   );
 

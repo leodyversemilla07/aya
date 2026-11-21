@@ -106,7 +106,7 @@ function ContractForm({ contract, onDone }: { contract?: ContractRecord; onDone:
       <FormError message={error} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Developer">
-          <Select value={developerId} onValueChange={setDeveloperId}>
+          <Select value={developerId} onValueChange={(value) => setDeveloperId(value ?? '')}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select developer" />
             </SelectTrigger>
@@ -120,7 +120,7 @@ function ContractForm({ contract, onDone }: { contract?: ContractRecord; onDone:
           </Select>
         </Field>
         <Field label="Client">
-          <Select value={clientId} onValueChange={setClientId}>
+          <Select value={clientId} onValueChange={(value) => setClientId(value ?? '')}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select client" />
             </SelectTrigger>
@@ -163,7 +163,7 @@ function ContractForm({ contract, onDone }: { contract?: ContractRecord; onDone:
           />
         </Field>
         <Field label="Status">
-          <Select value={status} onValueChange={setStatus}>
+          <Select value={status} onValueChange={(value) => setStatus(value ?? 'active')}>
             <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>

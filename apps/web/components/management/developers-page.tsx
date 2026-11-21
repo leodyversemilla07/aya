@@ -90,7 +90,7 @@ export function DevelopersPage() {
             aria-label="Search developers"
           />
         </div>
-        <Select value={seniority} onValueChange={setSeniority}>
+        <Select value={seniority} onValueChange={(value) => setSeniority(value ?? 'all')}>
           <SelectTrigger className="w-36">
             <SelectValue />
           </SelectTrigger>
@@ -103,7 +103,7 @@ export function DevelopersPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={bench} onValueChange={setBench}>
+        <Select value={bench} onValueChange={(value) => setBench(value ?? 'all')}>
           <SelectTrigger className="w-36">
             <SelectValue />
           </SelectTrigger>

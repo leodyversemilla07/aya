@@ -10,8 +10,8 @@ export default function NotFound() {
         The page you are looking for does not exist. Head back to the dashboard to keep working with
         Aya.
       </p>
-      <Button asChild>
-        <Link href="/">Back to dashboard</Link>
+      <Button nativeButton={false} render={<Link href="/" />}>
+        Back to dashboard
       </Button>
     </div>
   );

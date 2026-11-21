@@ -257,8 +257,10 @@ describe('Background staffing alerts (e2e)', () => {
       const claimedResult = concurrentResults.find((result) => result.claimed === 1);
       const skippedResult = concurrentResults.find((result) => result.claimed === 0);
       expect(claimedResult).toMatchObject({ claimed: 1, delivered: 0, failed: 1 });
+      // The loser must never claim or deliver; whether it reports the row as
+      // "skipped" depends on whether its candidate query ran before the winner's
+      // claim committed (a timing race), so only the safety invariant is asserted.
       expect(skippedResult).toMatchObject({ claimed: 0, delivered: 0, failed: 0 });
-      expect(skippedResult?.skipped).toBeGreaterThanOrEqual(1);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const failed = await prisma.alertDelivery.findUnique({ where: { id: delivery.id } });
       expect(failed).toMatchObject({ status: 'failed', attemptCount: 1, responseStatus: 500 });

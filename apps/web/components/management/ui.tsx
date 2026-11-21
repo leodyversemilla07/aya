@@ -123,16 +123,18 @@ export function ConfirmDelete({
 }) {
   return (
     <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button
-          type="button"
-          variant={showLabel ? 'destructive' : 'ghost'}
-          size={showLabel ? 'default' : 'icon-sm'}
-          aria-label="Delete"
-        >
-          <Trash2 />
-          {showLabel ? 'Delete' : null}
-        </Button>
+      <AlertDialogTrigger
+        render={
+          <Button
+            type="button"
+            variant={showLabel ? 'destructive' : 'ghost'}
+            size={showLabel ? 'default' : 'icon-sm'}
+            aria-label="Delete"
+          />
+        }
+      >
+        <Trash2 />
+        {showLabel ? 'Delete' : null}
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>

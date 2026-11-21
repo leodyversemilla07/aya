@@ -34,60 +34,60 @@ export function NavMain({ items, label = 'Platform' }: { items: NavMainItem[]; l
     <SidebarGroup>
       <SidebarGroupLabel>{label}</SidebarGroupLabel>
       <SidebarMenu>
-        {items.map((item) => (
-          <Collapsible
-            key={item.title}
-            asChild
-            defaultOpen={item.isActive}
-            className="group/collapsible"
-          >
-            <SidebarMenuItem>
-              <CollapsibleTrigger asChild>
-                <SidebarMenuButton
-                  asChild={!item.items?.length}
-                  isActive={item.isActive}
-                  tooltip={item.title}
-                >
-                  {item.items?.length ? (
-                    <>
-                      <item.icon />
-                      <span>{item.title}</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </>
-                  ) : (
-                    <Link href={item.url} onClick={item.onClick}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                      {item.badge && item.badge > 0 ? (
-                        <Badge
-                          variant="secondary"
-                          className="ml-auto px-1.5 py-0 text-[10px] group-data-[collapsible=icon]:hidden"
-                        >
-                          {item.badge > 99 ? '99+' : item.badge}
-                        </Badge>
-                      ) : null}
-                    </Link>
-                  )}
-                </SidebarMenuButton>
+        {items.map((item) =>
+          item.items?.length ? (
+            <Collapsible
+              key={item.title}
+              defaultOpen={item.isActive}
+              className="group/collapsible"
+              render={<SidebarMenuItem />}
+            >
+              <CollapsibleTrigger
+                render={<SidebarMenuButton isActive={item.isActive} tooltip={item.title} />}
+              >
+                <item.icon />
+                <span>{item.title}</span>
+                <ChevronRight className="ml-auto transition-transform duration-200 group-data-[open]/collapsible:rotate-90" />
               </CollapsibleTrigger>
-              {item.items?.length ? (
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    {item.items.map((subItem) => (
-                      <SidebarMenuSubItem key={subItem.title}>
-                        <SidebarMenuSubButton asChild>
-                          <Link href={subItem.url} onClick={subItem.onClick}>
-                            <span>{subItem.title}</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              ) : null}
-            </SidebarMenuItem>
-          </Collapsible>
-        ))}
+              <CollapsibleContent>
+                <SidebarMenuSub>
+                  {item.items.map((subItem) => (
+                    <SidebarMenuSubItem key={subItem.title}>
+                      <SidebarMenuSubButton
+                        render={<Link href={subItem.url} onClick={subItem.onClick} />}
+                      >
+                        <span>{subItem.title}</span>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  ))}
+                </SidebarMenuSub>
+              </CollapsibleContent>
+            </Collapsible>
+          ) : (
+            <Collapsible
+              key={item.title}
+              className="group/collapsible"
+              render={<SidebarMenuItem />}
+            >
+              <SidebarMenuButton
+                render={<Link href={item.url} onClick={item.onClick} />}
+                isActive={item.isActive}
+                tooltip={item.title}
+              >
+                <item.icon />
+                <span>{item.title}</span>
+                {item.badge && item.badge > 0 ? (
+                  <Badge
+                    variant="secondary"
+                    className="ml-auto px-1.5 py-0 text-[10px] group-data-[collapsible=icon]:hidden"
+                  >
+                    {item.badge > 99 ? '99+' : item.badge}
+                  </Badge>
+                ) : null}
+              </SidebarMenuButton>
+            </Collapsible>
+          ),
+        )}
       </SidebarMenu>
     </SidebarGroup>
   );

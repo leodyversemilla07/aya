@@ -71,7 +71,7 @@ export function PerformancePage() {
       }
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={developerId} onValueChange={setDeveloperId}>
+        <Select value={developerId} onValueChange={(value) => setDeveloperId(value ?? 'all')}>
           <SelectTrigger className="w-56">
             <SelectValue />
           </SelectTrigger>

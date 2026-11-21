@@ -53,6 +53,7 @@
     "ignore": [
       "node_modules",
       "apps/web/next-env.d.ts",
+      ".migration",
       "dist",
       ".next",
       ".turbo",

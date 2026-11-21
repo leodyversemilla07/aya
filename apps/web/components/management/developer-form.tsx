@@ -173,7 +173,7 @@ function DeveloperForm({
           />
         </Field>
         <Field label="Seniority" htmlFor="developer-seniority">
-          <Select value={seniority} onValueChange={setSeniority}>
+          <Select value={seniority} onValueChange={(value) => setSeniority(value ?? 'junior')}>
             <SelectTrigger id="developer-seniority" className="w-full">
               <SelectValue />
             </SelectTrigger>
@@ -258,7 +258,7 @@ function DeveloperForm({
                 <Field label="Level">
                   <Select
                     value={skill.level}
-                    onValueChange={(value) => updateSkill(skill.key, { level: value })}
+                    onValueChange={(value) => updateSkill(skill.key, { level: value ?? undefined })}
                   >
                     <SelectTrigger className="w-32">
                       <SelectValue />

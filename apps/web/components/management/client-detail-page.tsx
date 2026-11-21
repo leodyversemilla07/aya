@@ -47,11 +47,15 @@ export function ClientDetailPage({ id }: { id: string }) {
   });
 
   const back = (
-    <Button type="button" variant="ghost" size="sm" asChild>
-      <Link href="/clients">
-        <ArrowLeft />
-        Back to clients
-      </Link>
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      nativeButton={false}
+      render={<Link href="/clients" />}
+    >
+      <ArrowLeft />
+      Back to clients
     </Button>
   );
 
