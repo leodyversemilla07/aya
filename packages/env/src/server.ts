@@ -23,6 +23,7 @@ const serverEnvSchema = z
     LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
     LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
     LLM_MAX_TOKENS: z.coerce.number().int().positive().default(4096),
+    LLM_CONTEXT_WINDOW: z.coerce.number().int().min(1_024).default(128_000),
     AGENT_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
     CHAT_DAILY_QUOTA: z.coerce.number().int().min(0).default(200),
     ALERT_SCAN_INTERVAL_MS: z.coerce.number().int().min(5_000).default(60_000),

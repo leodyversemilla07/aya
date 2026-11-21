@@ -16,6 +16,7 @@
     "LLM_TIMEOUT_MS",
     "LLM_MAX_RETRIES",
     "LLM_MAX_TOKENS",
+    "LLM_CONTEXT_WINDOW",
     "AGENT_TIMEOUT_MS",
     "API_PORT",
     "API_KEY",

@@ -33,6 +33,7 @@ test.describe('dashboard and chat', () => {
           'event: tool_call\ndata: {"index":0,"name":"get_utilization","input":{"scope":"all"}}\n\n',
           'event: tool_result\ndata: {"index":0,"name":"get_utilization","output":{"onBench":2}}\n\n',
           'event: delta\ndata: {"content":"**2 developers** are on the bench."}\n\n',
+          'event: usage\ndata: {"inputTokens":8420,"outputTokens":1260,"totalInputTokens":8420,"totalOutputTokens":1260,"contextLimit":128000}\n\n',
           'event: done\ndata: {"conversationId":"e2e-conversation","content":"**2 developers** are on the bench."}\n\n',
         ].join(''),
       });
@@ -49,6 +50,12 @@ test.describe('dashboard and chat', () => {
     await expect(page.getByText('Checking utilization')).toBeVisible();
     await page.getByText('Checking utilization').click();
     await expect(page.getByText('"scope": "all"')).toBeVisible();
+
+    // The usage event surfaces a context indicator.
+    await expect(page.getByText('7% context')).toBeVisible();
+    await page.getByText('7% context').hover();
+    await expect(page.getByText('Context', { exact: true })).toBeVisible();
+    await expect(page.getByText('8.4k / 128k')).toBeVisible();
 
     const storedId = await page.evaluate(() => window.localStorage.getItem('aya:conversation-id'));
     expect(storedId).toBe('e2e-conversation');

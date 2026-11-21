@@ -12,6 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { getServerEnv } from '@workspace/env';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import type { AuthenticatedRequest } from '../auth/request';
@@ -165,6 +166,10 @@ export class AgentController {
     }, HEARTBEAT_MS);
 
     try {
+      let lastUsage: { inputTokens?: number; outputTokens?: number } | undefined;
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+
       const result = await this.agentService.chatStream(
         parsed.data.message,
         parsed.data.conversationId,
@@ -175,8 +180,36 @@ export class AgentController {
           onConversation: (conversation) => send('conversation', conversation),
           onStatus: (message) => send('status', { message }),
           onDelta: (content) => send('delta', { content }),
+          onToolCall: (event) =>
+            send('tool_call', {
+              index: event.index,
+              name: event.call.name,
+              input: event.call.args,
+            }),
+          onToolResult: (event) =>
+            send('tool_result', {
+              index: event.index,
+              name: event.call.name,
+              output: event.result,
+            }),
+          onCompletion: (completion) => {
+            // The last completion carries the full conversation context, so it
+            // is the number the context indicator reports.
+            lastUsage = completion.usage;
+            totalInputTokens += completion.usage?.inputTokens ?? 0;
+            totalOutputTokens += completion.usage?.outputTokens ?? 0;
+          },
         },
       );
+      if (lastUsage) {
+        send('usage', {
+          inputTokens: lastUsage.inputTokens ?? 0,
+          outputTokens: lastUsage.outputTokens ?? 0,
+          totalInputTokens,
+          totalOutputTokens,
+          contextLimit: getServerEnv().LLM_CONTEXT_WINDOW,
+        });
+      }
       send('done', result);
     } catch (error) {
       if (reservation) await this.quotaService.refund(reservation);

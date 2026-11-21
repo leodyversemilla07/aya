@@ -1,7 +1,7 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api';
-import { consumeChatStream } from '@/lib/chat-stream';
+import { type ChatUsage, consumeChatStream } from '@/lib/chat-stream';
 import { conversationsQuery, queryKeys } from '@/lib/queries';
 import type {
   ChatMessage,
@@ -48,6 +48,7 @@ interface ChatContextValue {
   status: string | null;
   streamingContent: string;
   toolSteps: ChatToolStep[];
+  usage: ChatUsage | null;
   error: string | null;
   conversationId: string | null;
   conversations: ConversationSummary[];
@@ -97,6 +98,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [streamingContent, setStreamingContent] = useState('');
   const [toolSteps, setToolSteps] = useState<ChatToolStep[]>([]);
   const toolStepsRef = useRef<ChatToolStep[]>([]);
+  const [usage, setUsage] = useState<ChatUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const resetToolSteps = useCallback(() => {
@@ -142,6 +144,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setStatus(null);
     setStreamingContent('');
     resetToolSteps();
+    setUsage(null);
     window.localStorage.removeItem(CONVERSATION_STORAGE_KEY);
   }, [resetToolSteps]);
 
@@ -378,6 +381,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
               );
               setToolSteps(toolStepsRef.current);
             },
+            onUsage: (next) => setUsage(next),
           });
           applyConversation(result.conversationId);
           finalContent = result.content;
@@ -450,6 +454,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       status,
       streamingContent,
       toolSteps,
+      usage,
       error,
       conversationId,
       conversations: conversationsQueryState.data ?? [],
@@ -471,6 +476,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       status,
       streamingContent,
       toolSteps,
+      usage,
       error,
       conversationId,
       conversationsQueryState.data,

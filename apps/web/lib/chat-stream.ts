@@ -1,9 +1,18 @@
+export interface ChatUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  contextLimit: number;
+}
+
 export interface ChatStreamHandlers {
   onConversation?: (conversation: { id: string; title: string }) => void;
   onStatus?: (message: string) => void;
   onDelta?: (content: string) => void;
   onToolCall?: (event: { name: string; input?: unknown }) => void;
   onToolResult?: (event: { name: string; output?: unknown }) => void;
+  onUsage?: (usage: ChatUsage) => void;
 }
 
 export interface ChatStreamResult {
@@ -87,6 +96,20 @@ export async function consumeChatStream(
     if (name === 'tool_result') {
       if (typeof payload.name === 'string') {
         handlers.onToolResult?.({ name: payload.name, output: payload.output });
+      }
+      return;
+    }
+
+    if (name === 'usage') {
+      const usage = payload as Partial<ChatUsage>;
+      if (
+        typeof usage.inputTokens === 'number' &&
+        typeof usage.outputTokens === 'number' &&
+        typeof usage.totalInputTokens === 'number' &&
+        typeof usage.totalOutputTokens === 'number' &&
+        typeof usage.contextLimit === 'number'
+      ) {
+        handlers.onUsage?.(usage as ChatUsage);
       }
       return;
     }

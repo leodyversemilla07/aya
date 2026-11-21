@@ -1,6 +1,7 @@
 'use client';
 
 import { ChatComposer } from '@/components/chat/chat-composer';
+import { ChatContextIndicator } from '@/components/chat/chat-context';
 import { ChatMessages } from '@/components/chat/chat-messages';
 import { useChat } from '@/components/chat/chat-provider';
 import { ChatWelcome } from '@/components/chat/chat-welcome';
@@ -11,7 +12,7 @@ import { StatsCards } from './stats-cards';
 
 export function DashboardPage() {
   const chatRef = useRef<HTMLDivElement>(null);
-  const { sendMessage } = useChat();
+  const { sendMessage, usage } = useChat();
 
   const handleAction = (query: string) => {
     void sendMessage(query);
@@ -61,6 +62,11 @@ export function DashboardPage() {
             <div className="flex h-[34rem] flex-col overflow-hidden rounded-xl border border-border bg-card">
               <ChatMessages emptyState={<ChatWelcome compact />} />
               <div className="border-t border-border p-3">
+                {usage ? (
+                  <div className="flex justify-end pb-2">
+                    <ChatContextIndicator usage={usage} />
+                  </div>
+                ) : null}
                 <ChatComposer />
               </div>
             </div>

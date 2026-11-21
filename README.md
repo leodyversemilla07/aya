@@ -192,6 +192,7 @@ LLM_MODEL="minimax-m2.5-free"
 LLM_TIMEOUT_MS="60000"
 LLM_MAX_RETRIES="2"
 LLM_MAX_TOKENS="4096"
+LLM_CONTEXT_WINDOW="128000"
 AGENT_TIMEOUT_MS="180000"
 
 # API
@@ -226,6 +227,7 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 | `LLM_TIMEOUT_MS` | `60000` | Per-request LLM timeout. |
 | `LLM_MAX_RETRIES` | `2` | Retries for retryable provider failures. |
 | `LLM_MAX_TOKENS` | `4096` | Maximum completion tokens. |
+| `LLM_CONTEXT_WINDOW` | `128000` | Context window size used to estimate context usage in the chat UI. |
 | `AGENT_TIMEOUT_MS` | `180000` | Total deadline for a single agent turn. |
 | `API_PORT` | `3001` | API listen port. |
 | `API_KEY` | — | Legacy single internal client key; `API_KEY` or `API_KEYS` is required. |

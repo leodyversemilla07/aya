@@ -28,19 +28,24 @@ export function ChatWelcome({ compact = false }: { compact?: boolean }) {
         contracts, or team performance.
       </p>
 
-      <div className="mt-6 flex flex-wrap justify-center gap-2">
-        {SUGGESTIONS.map((suggestion) => (
-          <Button
-            key={suggestion}
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={loading}
-            onClick={() => void sendMessage(suggestion)}
-          >
-            {suggestion}
-          </Button>
-        ))}
+      <div className="mt-6 flex flex-col items-center gap-2">
+        <p className="text-xs text-muted-foreground">Try one of these:</p>
+        {/* One-click prompt chips: horizontally scrollable, like the suggestion pattern. */}
+        <div className="scroll-fade-x scrollbar-none flex max-w-full gap-2 overflow-x-auto overscroll-x-contain px-2 pb-1 sm:flex-wrap sm:justify-center sm:px-0">
+          {SUGGESTIONS.map((suggestion) => (
+            <Button
+              key={suggestion}
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              disabled={loading}
+              onClick={() => void sendMessage(suggestion)}
+            >
+              {suggestion}
+            </Button>
+          ))}
+        </div>
       </div>
     </div>
   );
