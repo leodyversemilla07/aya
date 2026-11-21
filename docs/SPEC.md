@@ -45,7 +45,7 @@ apps/
       notifications/ Notification inbox and per-user read state
       auth/         API-key guard and @Public decorator
       management/   CRUD API for developers, clients, contracts, assignments, performance
-      llm/          OpenAI-compatible provider client
+      llm/          Provider-neutral LLM service used by the agent
       app.*         Root, health, stats, conversation routes
   web/
     app/
@@ -57,6 +57,7 @@ apps/
 packages/
   db/               Prisma schema, migrations, seed data
   auth/             Shared Better Auth configuration and client
+  ai/               Provider-neutral LLM client with native streaming adapters
   ui/               shadcn/ui component library
 ```
 
@@ -131,6 +132,20 @@ User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Qu
 - Tool calls and results are persisted for auditability; only user/assistant messages are replayed
   to the model.
 - The system prompt includes today's date so expiry reasoning is deterministic.
+
+### Provider streaming
+
+`@workspace/ai` exposes one provider-neutral contract for completions: normalized messages and
+tools in, text deltas, tool calls, usage, and finish reason out.
+
+- OpenAI-compatible providers, Anthropic, and Google each stream natively. Anthropic consumes
+  Messages API content-block events and Google consumes Gemini `streamGenerateContent` chunks.
+- Tool declarations, assistant tool calls, and tool results are translated per provider, including
+  Anthropic `tool_use`/`tool_result` blocks and Gemini `functionCall`/`functionResponse` parts.
+- Consecutive same-role turns are merged before sending, because Anthropic requires `tool_result`
+  blocks in the user turn that follows the assistant turn and Gemini expects alternating turns.
+- Token usage is normalized across providers and reported on the completion response together with
+  the provider, model, and streaming mode.
 
 ### Agent evaluation harness
 
@@ -237,8 +252,10 @@ supports cursor pagination with `limit` and `before` query parameters.
 `POST /agent/chat/stream` accepts the same body and returns `text/event-stream`. It emits
 `conversation` (`{ id, title }`), `status` (`{ message }`), `delta` (`{ content }`), `done`
 (`{ conversationId, content }`), and `error` (`{ message }`) events, plus comment heartbeats every
-15 seconds. Disconnects abort the upstream LLM request; OpenAI-compatible providers stream real
-tokens while Anthropic and Google emit the full reply as one `delta`.
+15 seconds. Disconnects abort the upstream LLM request. Every provider streams natively: the
+OpenAI-compatible path consumes `chat/completions` SSE deltas, the Anthropic path consumes
+Messages API content-block events, and the Google path consumes Gemini `streamGenerateContent`
+chunks.
 
 ### Authentication and authorization
 

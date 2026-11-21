@@ -1,14 +1,12 @@
-import {
-  type AiClient,
-  type AiDeltaHandler,
-  type AiMessage,
-  type AiProviderConfig,
-  type AiRequestOptions,
-  type AiResponse,
-  type ProviderId,
-  createAiClient,
-  getProviderConfig,
-} from './index.js';
+import { type AiClient, createAiClient, getProviderConfig } from './index.js';
+import type {
+  AiDeltaHandler,
+  AiMessage,
+  AiProviderConfig,
+  AiRequestOptions,
+  AiResponse,
+  ProviderId,
+} from './types.js';
 
 export interface AiModel {
   readonly id: string;
@@ -144,7 +142,7 @@ export class Models {
     if (!provider.stream) {
       const response = await provider.complete(model, messages, options);
       if (response.content) onDelta(response.content);
-      return response;
+      return { ...response, streamMode: 'buffered' as const };
     }
     return provider.stream(model, messages, options, onDelta);
   }

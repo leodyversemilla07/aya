@@ -3,6 +3,7 @@ import {
   AiError,
   type AiMessage,
   type AiResponse,
+  type AiStreamMode,
   type AiTool,
   createModels,
   getProviderConfig,
@@ -31,6 +32,7 @@ export interface LlmMessage {
   content: string;
   toolCalls?: LlmToolCall[];
   toolCallId?: string;
+  toolName?: string;
 }
 
 export interface LlmUsage {
@@ -43,6 +45,9 @@ export interface LlmResponse {
   content: string;
   toolCalls: LlmToolCall[];
   usage?: LlmUsage;
+  provider?: string;
+  model?: string;
+  streamMode?: AiStreamMode;
 }
 
 export interface LlmToolDefinition {
@@ -61,20 +66,37 @@ export function toJsonSchema(schema: ZodTypeAny): Record<string, unknown> {
 }
 
 function toAiMessages(messages: LlmMessage[]): AiMessage[] {
-  return messages.map((message) => {
-    if (message.role === 'assistant' && message.toolCalls) {
-      return {
-        role: message.role,
-        content: message.content,
-        toolCalls: message.toolCalls.map((call) => ({
-          id: call.id,
-          name: call.name,
-          arguments: call.args,
-        })),
-      };
+  return messages.map((message): AiMessage => {
+    switch (message.role) {
+      case 'system':
+        return { role: 'system', content: message.content };
+      case 'user':
+        return { role: 'user', content: message.content };
+      case 'assistant':
+        return {
+          role: 'assistant',
+          content: message.content,
+          ...(message.toolCalls
+            ? {
+                toolCalls: message.toolCalls.map((call) => ({
+                  id: call.id,
+                  name: call.name,
+                  arguments: call.args,
+                })),
+              }
+            : {}),
+        };
+      case 'tool':
+        return {
+          role: 'tool',
+          content: message.content,
+          toolCallId: message.toolCallId ?? '',
+          ...(message.toolName ? { toolName: message.toolName } : {}),
+        };
+      default:
+        return { role: 'user', content: message.content };
     }
-    return message;
-  }) as AiMessage[];
+  });
 }
 
 function toAiTools(tools?: LlmTools): AiTool[] | undefined {
@@ -148,6 +170,9 @@ function toLlmResponse(response: AiResponse): LlmResponse {
       args: call.arguments,
     })),
     ...(response.usage ? { usage: response.usage } : {}),
+    provider: response.provider,
+    model: response.model,
+    ...(response.streamMode ? { streamMode: response.streamMode } : {}),
   };
 }
 

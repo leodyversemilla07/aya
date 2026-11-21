@@ -1,75 +1,22 @@
 import { randomUUID } from 'node:crypto';
+import { anthropicUrl, buildAnthropicBody, streamAnthropic } from './anthropic.js';
+import { AiError, abortError, timeoutError } from './errors.js';
+import { googleContents, googleSystemPrompt, streamGoogle } from './google.js';
+import { assertProviderOk } from './http.js';
+import { parseArguments, usageFrom } from './parse.js';
+import { readSseEvents } from './sse.js';
+import type {
+  AiDeltaHandler,
+  AiMessage,
+  AiProviderConfig,
+  AiRequestOptions,
+  AiResponse,
+  AiToolCall,
+  ProviderId,
+} from './types.js';
 
-export type ProviderId =
-  | 'openai'
-  | 'openrouter'
-  | 'opencode-zen'
-  | 'anthropic'
-  | 'google'
-  | 'custom';
-
-export interface AiTool {
-  name: string;
-  description?: string;
-  parameters: Record<string, unknown>;
-}
-
-export interface AiToolCall {
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
-}
-
-export type AiMessage =
-  | { role: 'system' | 'user'; content: string }
-  | { role: 'assistant'; content: string; toolCalls?: AiToolCall[] }
-  | { role: 'tool'; content: string; toolCallId: string };
-
-export interface AiUsage {
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
-}
-
-export interface AiResponse {
-  content: string;
-  toolCalls: AiToolCall[];
-  usage?: AiUsage;
-  finishReason?: string;
-  provider: ProviderId;
-  model: string;
-}
-
-export interface AiRequestOptions {
-  signal?: AbortSignal;
-  tools?: AiTool[];
-  maxTokens?: number;
-  temperature?: number;
-}
-
-export type AiDeltaHandler = (delta: string) => void;
-
-export interface AiProviderConfig {
-  provider: ProviderId;
-  apiKey: string;
-  model: string;
-  baseUrl?: string;
-  timeoutMs?: number;
-  maxRetries?: number;
-  headers?: Record<string, string>;
-}
-
-export class AiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly provider?: ProviderId,
-    readonly retryable = false,
-  ) {
-    super(message);
-    this.name = 'AiError';
-  }
-}
+export * from './types.js';
+export { AiError } from './errors.js';
 
 const DEFAULTS: Record<ProviderId, { baseUrl: string; model: string }> = {
   openai: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
@@ -78,66 +25,13 @@ const DEFAULTS: Record<ProviderId, { baseUrl: string; model: string }> = {
     model: 'google/gemma-4-26b-a4b-it:free',
   },
   'opencode-zen': { baseUrl: 'https://opencode.ai/zen/v1', model: 'minimax-m2.5-free' },
-  anthropic: { baseUrl: 'https://api.anthropic.com', model: 'claude-3-5-haiku-latest' },
+  anthropic: { baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-5' },
   google: {
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.5-flash',
   },
   custom: { baseUrl: 'http://localhost:3000/v1', model: 'default' },
 };
-
-function parseArguments(value: unknown): Record<string, unknown> {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  if (typeof value !== 'string') return {};
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
-}
-
-function usageFrom(
-  value:
-    | {
-        prompt_tokens?: number;
-        completion_tokens?: number;
-        total_tokens?: number;
-        input_tokens?: number;
-        output_tokens?: number;
-        promptTokenCount?: number;
-        candidatesTokenCount?: number;
-        totalTokenCount?: number;
-      }
-    | undefined,
-): AiUsage | undefined {
-  if (!value) return undefined;
-  const inputTokens = value.prompt_tokens ?? value.input_tokens ?? value.promptTokenCount;
-  const outputTokens = value.completion_tokens ?? value.output_tokens ?? value.candidatesTokenCount;
-  return {
-    inputTokens,
-    outputTokens,
-    totalTokens:
-      value.total_tokens ??
-      value.totalTokenCount ??
-      (inputTokens !== undefined && outputTokens !== undefined
-        ? inputTokens + outputTokens
-        : undefined),
-  };
-}
-
-function abortError(signal: AbortSignal | undefined, timeoutMs: number): AiError {
-  return new AiError(
-    signal?.aborted
-      ? 'The AI request was cancelled before it completed.'
-      : `The AI request timed out after ${Math.round(timeoutMs / 1000)} seconds.`,
-    504,
-  );
-}
 
 const PROVIDER_KEY_ENV: Partial<Record<ProviderId, string>> = {
   openai: 'OPENAI_API_KEY',
@@ -173,43 +67,6 @@ export function getProviderConfig(
   };
 }
 
-async function* readSseEvents(
-  body: ReadableStream<Uint8Array>,
-): AsyncGenerator<string, void, undefined> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let dataLines: string[] = [];
-
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let newline = buffer.indexOf('\n');
-      while (newline !== -1) {
-        const line = buffer.slice(0, newline).replace(/\r$/, '');
-        buffer = buffer.slice(newline + 1);
-        if (line === '') {
-          if (dataLines.length > 0) {
-            yield dataLines.join('\n');
-            dataLines = [];
-          }
-        } else if (line.startsWith('data:')) {
-          dataLines.push(line.slice(5).trimStart());
-        }
-        newline = buffer.indexOf('\n');
-      }
-    }
-    buffer += decoder.decode();
-    if (buffer.startsWith('data:')) dataLines.push(buffer.slice(5).trimStart());
-    if (dataLines.length > 0) yield dataLines.join('\n');
-  } finally {
-    reader.releaseLock();
-  }
-}
-
 export class AiClient {
   private readonly config: Required<Pick<AiProviderConfig, 'baseUrl' | 'timeoutMs' | 'maxRetries'>>;
 
@@ -219,6 +76,15 @@ export class AiClient {
         providerConfig.baseUrl?.replace(/\/+$/, '') || DEFAULTS[providerConfig.provider].baseUrl,
       timeoutMs: providerConfig.timeoutMs ?? 60_000,
       maxRetries: providerConfig.maxRetries ?? 2,
+    };
+  }
+
+  private resolvedConfig(): AiProviderConfig {
+    return {
+      ...this.providerConfig,
+      baseUrl: this.config.baseUrl,
+      timeoutMs: this.config.timeoutMs,
+      maxRetries: this.config.maxRetries,
     };
   }
 
@@ -293,15 +159,28 @@ export class AiClient {
       : controller.signal;
 
     try {
-      if (
-        this.providerConfig.provider === 'anthropic' ||
-        this.providerConfig.provider === 'google'
-      ) {
-        const response = await this.request(messages, options);
-        onDelta(response.content);
-        return response;
+      if (this.providerConfig.provider === 'anthropic') {
+        return await streamAnthropic(this.resolvedConfig(), messages, options, signal, onDelta);
+      }
+      if (this.providerConfig.provider === 'google') {
+        return await streamGoogle(this.resolvedConfig(), messages, options, signal, onDelta);
       }
       return await this.openAiCompatibleStream(messages, options, signal, onDelta);
+    } catch (error) {
+      if (error instanceof AiError) {
+        if (controller.signal.aborted && error.status === 504) {
+          throw timeoutError(this.config.timeoutMs);
+        }
+        throw error;
+      }
+      if (controller.signal.aborted) throw timeoutError(this.config.timeoutMs);
+      if (signal.aborted) throw abortError(signal, this.config.timeoutMs);
+      throw new AiError(
+        `Could not reach the ${this.providerConfig.provider} AI provider.`,
+        502,
+        this.providerConfig.provider,
+        true,
+      );
     } finally {
       clearTimeout(timeout);
     }
@@ -319,6 +198,21 @@ export class AiClient {
       if (this.providerConfig.provider === 'google')
         return await this.google(messages, options, signal);
       return await this.openAiCompatible(messages, options, signal);
+    } catch (error) {
+      if (error instanceof AiError) {
+        if (controller.signal.aborted && error.status === 504) {
+          throw timeoutError(this.config.timeoutMs);
+        }
+        throw error;
+      }
+      if (controller.signal.aborted) throw timeoutError(this.config.timeoutMs);
+      if (signal.aborted) throw abortError(signal, this.config.timeoutMs);
+      throw new AiError(
+        `Could not reach the ${this.providerConfig.provider} AI provider.`,
+        502,
+        this.providerConfig.provider,
+        true,
+      );
     } finally {
       clearTimeout(timeout);
     }
@@ -331,7 +225,7 @@ export class AiClient {
   ): Promise<Record<string, unknown>> {
     try {
       const response = await fetch(url, { ...init, signal });
-      await this.assertOk(response);
+      await assertProviderOk(response, this.providerConfig.provider);
       return (await response.json()) as Record<string, unknown>;
     } catch (error) {
       if (error instanceof AiError) throw error;
@@ -343,20 +237,6 @@ export class AiClient {
         true,
       );
     }
-  }
-
-  private async assertOk(response: Response): Promise<void> {
-    if (response.ok) return;
-    await response.text();
-    const retryable = response.status === 429 || response.status >= 500;
-    throw new AiError(
-      response.status === 401 || response.status === 403
-        ? 'The AI provider rejected the configured API key.'
-        : `The AI provider returned an error (${response.status}).`,
-      response.status,
-      this.providerConfig.provider,
-      retryable,
-    );
   }
 
   private chatCompletionsUrl(): string {
@@ -479,7 +359,7 @@ export class AiClient {
         body: JSON.stringify({ ...this.openAiBody(messages, options), stream: true }),
         signal,
       });
-      await this.assertOk(response);
+      await assertProviderOk(response, this.providerConfig.provider);
     } catch (error) {
       if (error instanceof AiError) throw error;
       if (signal.aborted) throw abortError(signal, this.config.timeoutMs);
@@ -502,7 +382,7 @@ export class AiClient {
     let content = '';
     let sawChoice = false;
     let finishReason: string | undefined;
-    let usage: AiUsage | undefined;
+    let usage: AiResponse['usage'];
     const toolCalls: Array<{ id?: string; name?: string; arguments: string } | undefined> = [];
 
     try {
@@ -602,6 +482,7 @@ export class AiClient {
       finishReason,
       provider: this.providerConfig.provider,
       model: this.providerConfig.model,
+      streamMode: 'native',
     };
   }
 
@@ -610,32 +491,9 @@ export class AiClient {
     options: AiRequestOptions,
     signal: AbortSignal,
   ): Promise<AiResponse> {
-    const system = messages.find((message) => message.role === 'system')?.content;
-    const body = {
-      model: this.providerConfig.model,
-      max_tokens: options.maxTokens ?? 4096,
-      ...(system ? { system } : {}),
-      messages: messages
-        .filter((message) => message.role !== 'system')
-        .map((message) => ({
-          role: message.role === 'tool' ? 'user' : message.role,
-          content:
-            message.role === 'tool'
-              ? [{ type: 'tool_result', tool_use_id: message.toolCallId, content: message.content }]
-              : message.content,
-        })),
-      ...(options.tools?.length
-        ? {
-            tools: options.tools.map((tool) => ({
-              name: tool.name,
-              description: tool.description,
-              input_schema: tool.parameters,
-            })),
-          }
-        : {}),
-    };
+    const body = buildAnthropicBody(this.resolvedConfig(), messages, options);
     const data = await this.fetchJson(
-      `${this.config.baseUrl}/v1/messages`,
+      anthropicUrl(this.config.baseUrl),
       {
         method: 'POST',
         headers: {
@@ -685,37 +543,9 @@ export class AiClient {
     options: AiRequestOptions,
     signal: AbortSignal,
   ): Promise<AiResponse> {
-    const contents = messages
-      .filter((message) => message.role !== 'system')
-      .map((message) => {
-        if (message.role === 'tool') {
-          return {
-            role: 'user',
-            parts: [
-              {
-                functionResponse: {
-                  name: message.toolCallId,
-                  response: parseArguments(message.content),
-                },
-              },
-            ],
-          };
-        }
-        return {
-          role: message.role === 'assistant' ? 'model' : 'user',
-          parts: [
-            ...(message.content ? [{ text: message.content }] : []),
-            ...(message.role === 'assistant' && message.toolCalls
-              ? message.toolCalls.map((call) => ({
-                  functionCall: { name: call.name, args: call.arguments },
-                }))
-              : []),
-          ],
-        };
-      });
-    const system = messages.find((message) => message.role === 'system')?.content;
+    const system = googleSystemPrompt(messages);
     const body: Record<string, unknown> = {
-      contents,
+      contents: googleContents(messages),
       generationConfig: {
         maxOutputTokens: options.maxTokens ?? 4096,
         ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
@@ -727,7 +557,7 @@ export class AiClient {
               {
                 functionDeclarations: options.tools.map((tool) => ({
                   name: tool.name,
-                  description: tool.description,
+                  description: tool.description ?? '',
                   parameters: tool.parameters,
                 })),
               },
@@ -736,7 +566,7 @@ export class AiClient {
         : {}),
     };
     const data = await this.fetchJson(
-      `${this.config.baseUrl}/models/${this.providerConfig.model}:generateContent?key=${encodeURIComponent(this.providerConfig.apiKey)}`,
+      `${this.config.baseUrl.replace(/\/+$/, '')}/models/${this.providerConfig.model}:generateContent?key=${encodeURIComponent(this.providerConfig.apiKey)}`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...this.providerConfig.headers },
@@ -744,16 +574,17 @@ export class AiClient {
       },
       signal,
     );
-    const parts =
-      (
-        data.candidates as
-          | Array<{
-              content?: {
-                parts?: Array<{ text?: string; functionCall?: { name?: string; args?: unknown } }>;
-              };
-            }>
-          | undefined
-      )?.[0]?.content?.parts ?? [];
+    const candidate = (
+      data.candidates as
+        | Array<{
+            content?: {
+              parts?: Array<{ text?: string; functionCall?: { name?: string; args?: unknown } }>;
+            };
+            finishReason?: string;
+          }>
+        | undefined
+    )?.[0];
+    const parts = candidate?.content?.parts ?? [];
     return {
       content: parts.map((part) => part.text ?? '').join(''),
       toolCalls: parts
@@ -779,6 +610,7 @@ export class AiClient {
       ),
       provider: this.providerConfig.provider,
       model: this.providerConfig.model,
+      finishReason: candidate?.finishReason,
     };
   }
 }

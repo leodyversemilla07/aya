@@ -262,6 +262,12 @@ administrators.
 | `opencode-zen` | `https://opencode.ai/zen/v1` | `minimax-m2.5-free` |
 | `openai` | `https://api.openai.com/v1` | `gpt-4o-mini` |
 | `openrouter` | `https://openrouter.ai/api/v1` | `google/gemma-4-26b-a4b-it:free` |
+| `anthropic` | `https://api.anthropic.com` | `claude-sonnet-4-5` |
+| `google` | `https://generativelanguage.googleapis.com/v1beta` | `gemini-2.5-flash` |
+
+All providers stream natively. Anthropic and Google use their own SSE dialects (Messages API
+content-block events and Gemini `streamGenerateContent` chunks) instead of the OpenAI-compatible
+shape. See [LLM providers](./LLM_PROVIDERS.md) for the full reference.
 
 Provider errors are sanitized before being returned to the browser. Authentication, rate-limit,
 and timeout failures produce actionable messages.

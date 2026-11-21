@@ -51,6 +51,8 @@ days?"_ — and return ranked, explainable answers.
   transitions, webhook attempts, and notification counts.
 - **Multi-turn conversations** — history is persisted in the database, streamed token by token, and
   shared across the dashboard and chat pages. Older messages load on demand and chats can be deleted.
+- **Native provider streaming** — OpenAI-compatible, Anthropic, and Google providers all stream
+  incremental tokens, tool calls, and usage through one provider-neutral contract.
 - **Management console** — create, edit, and delete developers, clients, contracts, assignments,
   and performance records from dedicated pages, with search and status filters.
 - **Role-based access control** — admin, manager, and viewer roles protect management writes and
@@ -324,8 +326,9 @@ to stdout.
 | `error` | `{ message, requestId }` | Safe, user-facing failure message |
 
 Comment heartbeats (`: ping`) are sent every 15 seconds to keep proxies from closing idle
-connections. A client disconnect aborts the underlying LLM request. OpenAI-compatible providers
-stream true tokens; Anthropic and Google fall back to a single `delta` containing the full reply.
+connections. A client disconnect aborts the underlying LLM request. Every provider streams native
+tokens: OpenAI-compatible providers use `chat/completions` SSE deltas, Anthropic uses Messages API
+content-block events, and Google uses Gemini `streamGenerateContent` chunks.
 
 ```bash
 curl -N -X POST http://localhost:3001/agent/chat/stream \
@@ -561,18 +564,19 @@ The PostgreSQL job also verifies migrations and schema drift against a clean dat
 
 ## LLM providers
 
-| Provider | Default base URL | Default model |
-|----------|------------------|---------------|
-| `opencode-zen` | `https://opencode.ai/zen/v1` | `minimax-m2.5-free` |
-| `openai` | `https://api.openai.com/v1` | `gpt-4o-mini` |
-| `openrouter` | `https://openrouter.ai/api/v1` | `google/gemma-4-26b-a4b-it:free` |
-| `anthropic` | `https://api.anthropic.com` | `claude-3-5-haiku-latest` |
-| `google` | `https://generativelanguage.googleapis.com/v1beta` | `gemini-2.0-flash` |
-| `custom` | `http://localhost:3000/v1` | `default` |
+| Provider | Default base URL | Default model | Streaming |
+|----------|------------------|---------------|-----------|
+| `opencode-zen` | `https://opencode.ai/zen/v1` | `minimax-m2.5-free` | Native SSE |
+| `openai` | `https://api.openai.com/v1` | `gpt-4o-mini` | Native SSE |
+| `openrouter` | `https://openrouter.ai/api/v1` | `google/gemma-4-26b-a4b-it:free` | Native SSE |
+| `anthropic` | `https://api.anthropic.com` | `claude-sonnet-4-5` | Native Messages API SSE |
+| `google` | `https://generativelanguage.googleapis.com/v1beta` | `gemini-2.5-flash` | Native Gemini SSE |
+| `custom` | `http://localhost:3000/v1` | `default` | Native SSE |
 
 Set `LLM_PROVIDER` and `LLM_API_KEY` to switch providers, or override `LLM_BASE_URL` and
 `LLM_MODEL`. Provider factories are also exported from `@workspace/ai/providers/*` when an
-application needs more than the environment-selected provider.
+application needs more than the environment-selected provider. See
+[LLM providers](docs/LLM_PROVIDERS.md) for streaming, tool-call, and usage details per provider.
 
 ## Deployment
 
@@ -599,5 +603,6 @@ SSE proxy settings, and the migration workflow.
 - [Development setup](docs/DEVELOPMENT_SETUP.md) — local environment, testing, and troubleshooting
 - [Agent evaluations](docs/AGENT_EVALUATIONS.md) — benchmark modes, metrics, scenarios, and reports
 - [Background alerts](docs/BACKGROUND_ALERTS.md) — alert rules, worker operation, and signed webhooks
+- [LLM providers](docs/LLM_PROVIDERS.md) — provider selection, native streaming, and tool semantics
 - [Project specification](docs/SPEC.md) — features, architecture, data model, and success criteria
 - [Brand guide](docs/BRAND.md) — logo variants, color, typography, and usage rules

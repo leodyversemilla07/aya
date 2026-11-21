@@ -237,6 +237,13 @@ export class AgentService {
             requestSignal,
           )
         : await this.llmService.chat(completionMessages, completionTools, requestSignal);
+      this.logger.debug(
+        `LLM completion provider=${completion.provider ?? 'unknown'} model=${
+          completion.model ?? 'unknown'
+        } stream=${completion.streamMode ?? 'none'} inputTokens=${
+          completion.usage?.inputTokens ?? 'n/a'
+        } outputTokens=${completion.usage?.outputTokens ?? 'n/a'}`,
+      );
       hooks?.onCompletion?.(completion);
       return completion;
     };
@@ -257,6 +264,7 @@ export class AgentService {
             role: 'tool' as const,
             content: JSON.stringify(result),
             toolCallId: toolCall.id,
+            toolName: toolCall.name,
           };
         }),
       );

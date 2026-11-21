@@ -33,11 +33,12 @@ async function withLlmEnv<T>(
   baseUrl: string,
   maxRetries: string,
   run: () => Promise<T>,
+  provider = 'openai',
 ): Promise<T> {
   const previous: Record<string, string | undefined> = {};
   for (const key of LLM_ENV_KEYS) previous[key] = process.env[key];
 
-  process.env.LLM_PROVIDER = 'openai';
+  process.env.LLM_PROVIDER = provider;
   process.env.LLM_API_KEY = 'test-key';
   process.env.LLM_BASE_URL = baseUrl;
   process.env.LLM_MAX_RETRIES = maxRetries;
@@ -159,10 +160,11 @@ describe('LlmService.chat', () => {
         await withLlmEnv(baseUrl, '0', async () => {
           const result = await new LlmService().chat([{ role: 'user', content: 'hello' }]);
 
-          expect(result).toEqual({
+          expect(result).toMatchObject({
             content: 'Done',
             toolCalls: [],
             usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17 },
+            provider: 'openai',
           });
         });
       },
@@ -202,7 +204,12 @@ describe('LlmService.chatStream', () => {
             (delta) => deltas.push(delta),
           );
 
-          expect(result).toEqual({ content: 'Hello world', toolCalls: [] });
+          expect(result).toMatchObject({
+            content: 'Hello world',
+            toolCalls: [],
+            provider: 'openai',
+            streamMode: 'native',
+          });
         });
       },
     );
@@ -233,7 +240,7 @@ describe('LlmService.chatStream', () => {
             () => {},
           );
 
-          expect(result).toEqual({
+          expect(result).toMatchObject({
             content: '',
             toolCalls: [
               {
@@ -276,5 +283,97 @@ describe('LlmService.chatStream', () => {
 
     expect(requests).toBe(1);
     expect(deltas).toEqual(['Partial']);
+  });
+
+  it('streams Anthropic responses with native deltas', async () => {
+    const deltas: string[] = [];
+
+    await withProviderServer(
+      (request, response) => {
+        request.resume();
+        response.writeHead(200, { 'content-type': 'text/event-stream' });
+        response.write(
+          'data: {"type":"message_start","message":{"usage":{"input_tokens":11,"output_tokens":1}}}\n\n',
+        );
+        response.write(
+          'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+        );
+        response.write(
+          'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi "}}\n\n',
+        );
+        response.write(
+          'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"there"}}\n\n',
+        );
+        response.write(
+          'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":4}}\n\n',
+        );
+        response.write('data: {"type":"message_stop"}\n\n');
+        response.end();
+      },
+      async (baseUrl) => {
+        await withLlmEnv(
+          baseUrl,
+          '0',
+          async () => {
+            const result = await new LlmService().chatStream(
+              [{ role: 'user', content: 'hello' }],
+              undefined,
+              (delta) => deltas.push(delta),
+            );
+
+            expect(result).toMatchObject({
+              content: 'Hi there',
+              provider: 'anthropic',
+              streamMode: 'native',
+              usage: { inputTokens: 11, outputTokens: 4, totalTokens: 15 },
+            });
+          },
+          'anthropic',
+        );
+      },
+    );
+
+    expect(deltas).toEqual(['Hi ', 'there']);
+  });
+
+  it('streams Google responses with native deltas', async () => {
+    const deltas: string[] = [];
+
+    await withProviderServer(
+      (request, response) => {
+        request.resume();
+        response.writeHead(200, { 'content-type': 'text/event-stream' });
+        response.write(
+          'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Hi "}]}}]}\n\n',
+        );
+        response.write(
+          'data: {"candidates":[{"content":{"role":"model","parts":[{"text":"there"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":8,"candidatesTokenCount":3,"totalTokenCount":11}}\n\n',
+        );
+        response.end();
+      },
+      async (baseUrl) => {
+        await withLlmEnv(
+          baseUrl,
+          '0',
+          async () => {
+            const result = await new LlmService().chatStream(
+              [{ role: 'user', content: 'hello' }],
+              undefined,
+              (delta) => deltas.push(delta),
+            );
+
+            expect(result).toMatchObject({
+              content: 'Hi there',
+              provider: 'google',
+              streamMode: 'native',
+              usage: { inputTokens: 8, outputTokens: 3, totalTokens: 11 },
+            });
+          },
+          'google',
+        );
+      },
+    );
+
+    expect(deltas).toEqual(['Hi ', 'there']);
   });
 });
