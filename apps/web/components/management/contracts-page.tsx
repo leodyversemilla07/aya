@@ -1,5 +1,6 @@
 'use client';
 
+import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { contractsQuery } from '@/lib/queries';
 import type { ContractRecord } from '@/lib/types';
@@ -36,6 +37,7 @@ import {
 } from './ui';
 
 export function ContractsPage() {
+  const { canManage } = useWorkspaceAccess();
   const [status, setStatus] = useState('all');
   const [expiring, setExpiring] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -64,16 +66,18 @@ export function ContractsPage() {
       subtitle="Commercial management"
       description="Track billing rates, renewal windows, and contract status."
       action={
-        <Button
-          type="button"
-          onClick={() => {
-            setEditing(null);
-            setDialogOpen(true);
-          }}
-        >
-          <Plus />
-          Add contract
-        </Button>
+        canManage ? (
+          <Button
+            type="button"
+            onClick={() => {
+              setEditing(null);
+              setDialogOpen(true);
+            }}
+          >
+            <Plus />
+            Add contract
+          </Button>
+        ) : undefined
       }
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -119,7 +123,7 @@ export function ContractsPage() {
                   <TableHead>Rate</TableHead>
                   <TableHead>Expiry</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-24 text-right">Actions</TableHead>
+                  {canManage ? <TableHead className="w-24 text-right">Actions</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -149,30 +153,32 @@ export function ContractsPage() {
                     <TableCell>
                       <StatusBadge status={contract.status} />
                     </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Edit contract for ${contract.developer.name}`}
-                          onClick={() => {
-                            setEditing(contract);
-                            setDialogOpen(true);
-                          }}
-                        >
-                          <Pencil />
-                        </Button>
-                        <ConfirmDelete
-                          title="Delete contract?"
-                          description={`The contract between ${contract.developer.name} and ${contract.client.name} will be permanently deleted.`}
-                          pending={
-                            deleteMutation.isPending && deleteMutation.variables === contract.id
-                          }
-                          onConfirm={() => deleteMutation.mutate(contract.id)}
-                        />
-                      </div>
-                    </TableCell>
+                    {canManage ? (
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Edit contract for ${contract.developer.name}`}
+                            onClick={() => {
+                              setEditing(contract);
+                              setDialogOpen(true);
+                            }}
+                          >
+                            <Pencil />
+                          </Button>
+                          <ConfirmDelete
+                            title="Delete contract?"
+                            description={`The contract between ${contract.developer.name} and ${contract.client.name} will be permanently deleted.`}
+                            pending={
+                              deleteMutation.isPending && deleteMutation.variables === contract.id
+                            }
+                            onConfirm={() => deleteMutation.mutate(contract.id)}
+                          />
+                        </div>
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))}
               </TableBody>

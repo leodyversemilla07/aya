@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 export { Prisma } from '@prisma/client';
 export type {
   Assignment,
+  AuditLog,
   Client,
   Contact,
   Contract,
@@ -11,6 +12,7 @@ export type {
   Message,
   Performance,
   Skill,
+  User,
 } from '@prisma/client';
 
 export {

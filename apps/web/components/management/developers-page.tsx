@@ -1,5 +1,6 @@
 'use client';
 
+import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { developersQuery } from '@/lib/queries';
 import type { DeveloperSummary } from '@/lib/types';
@@ -32,6 +33,7 @@ import { ConfirmDelete, EmptyRows, LoadingRows, ManagementPage, QueryError } fro
 const SENIORITIES = ['junior', 'mid', 'senior', 'lead'] as const;
 
 export function DevelopersPage() {
+  const { canManage } = useWorkspaceAccess();
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [seniority, setSeniority] = useState('all');
@@ -63,16 +65,18 @@ export function DevelopersPage() {
       subtitle="Roster management"
       description="Search the roster, keep skill data current, and adjust availability."
       action={
-        <Button
-          type="button"
-          onClick={() => {
-            setEditing(null);
-            setDialogOpen(true);
-          }}
-        >
-          <Plus />
-          Add developer
-        </Button>
+        canManage ? (
+          <Button
+            type="button"
+            onClick={() => {
+              setEditing(null);
+              setDialogOpen(true);
+            }}
+          >
+            <Plus />
+            Add developer
+          </Button>
+        ) : undefined
       }
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -128,7 +132,7 @@ export function DevelopersPage() {
                   <TableHead>Seniority</TableHead>
                   <TableHead>Current assignment</TableHead>
                   <TableHead>Skills</TableHead>
-                  <TableHead className="w-24 text-right">Actions</TableHead>
+                  {canManage ? <TableHead className="w-24 text-right">Actions</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -176,30 +180,32 @@ export function DevelopersPage() {
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Edit ${developer.name}`}
-                          onClick={() => {
-                            setEditing(developer);
-                            setDialogOpen(true);
-                          }}
-                        >
-                          <Pencil />
-                        </Button>
-                        <ConfirmDelete
-                          title="Delete developer?"
-                          description={`${developer.name} and their skills, assignments, contracts, and performance records will be permanently deleted.`}
-                          pending={
-                            deleteMutation.isPending && deleteMutation.variables === developer.id
-                          }
-                          onConfirm={() => deleteMutation.mutate(developer.id)}
-                        />
-                      </div>
-                    </TableCell>
+                    {canManage ? (
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Edit ${developer.name}`}
+                            onClick={() => {
+                              setEditing(developer);
+                              setDialogOpen(true);
+                            }}
+                          >
+                            <Pencil />
+                          </Button>
+                          <ConfirmDelete
+                            title="Delete developer?"
+                            description={`${developer.name} and their skills, assignments, contracts, and performance records will be permanently deleted.`}
+                            pending={
+                              deleteMutation.isPending && deleteMutation.variables === developer.id
+                            }
+                            onConfirm={() => deleteMutation.mutate(developer.id)}
+                          />
+                        </div>
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))}
               </TableBody>

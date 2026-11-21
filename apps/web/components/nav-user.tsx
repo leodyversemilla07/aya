@@ -1,6 +1,7 @@
 'use client';
 
 import { authClient } from '@workspace/auth/client';
+import { normalizeUserRole } from '@workspace/auth/roles';
 import { Avatar, AvatarFallback } from '@workspace/ui/components/avatar';
 import {
   DropdownMenu,
@@ -22,6 +23,7 @@ export function NavUser() {
   const { isMobile } = useSidebar();
   const { data: session } = authClient.useSession();
   const user = session?.user;
+  const role = normalizeUserRole((user as { role?: unknown } | undefined)?.role);
   const initials =
     user?.name
       ?.split(' ')
@@ -42,6 +44,9 @@ export function NavUser() {
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">{user?.name ?? 'Aya workspace'}</span>
                 <span className="truncate text-xs">{user?.email ?? 'Staff augmentation'}</span>
+                <span className="mt-0.5 text-[11px] font-medium capitalize text-muted-foreground">
+                  {role}
+                </span>
               </div>
               <ChevronsUpDown className="ml-auto size-4" />
             </SidebarMenuButton>

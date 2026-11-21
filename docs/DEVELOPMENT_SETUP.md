@@ -92,6 +92,7 @@ TRUST_PROXY="false"
 CHAT_DAILY_QUOTA="200"
 BETTER_AUTH_SECRET="replace-with-a-random-32-byte-secret"
 BETTER_AUTH_URL="http://localhost:3000"
+ADMIN_EMAILS="admin@example.com"
 ```
 
 - `DATABASE_URL` may be a SQLite file or a `postgresql://` URL. The matching schema and migration
@@ -103,6 +104,7 @@ BETTER_AUTH_URL="http://localhost:3000"
   more than the environment-selected provider. The API currently uses the environment-selected
   provider through the shared `Models` registry.
 - `API_KEY` is required in every environment. The API refuses to start without it.
+- `ADMIN_EMAILS` is a comma-separated production allowlist for administrator self-registration.
 - `CORS_ORIGINS` is a comma-separated allowlist. Use explicit web origins when sending
   credentialed Better Auth requests; do not use `*` with credentials.
 
@@ -179,8 +181,9 @@ starting the tests, so no manual database setup is required.
 
 `pnpm run test:e2e:web` builds the workspace, then runs Playwright against the production build.
 Playwright starts both servers, seeds `packages/db/prisma/playwright.db`, and tests sign-up/sign-in,
-session redirects, dashboard stats, and chat rendering with the LLM mocked. Install the browser
-once with:
+session redirects, dashboard stats, and chat rendering with the LLM mocked. Its dedicated seed run
+uses `SEED_RESET_USERS=true` to remove auth users, sessions, and audit history; never use that
+switch against a shared or persistent database. Install the browser once with:
 
 ```bash
 pnpm --filter web exec playwright install chromium
@@ -188,16 +191,25 @@ pnpm --filter web exec playwright install chromium
 
 The tests do not call a real LLM. They cover public health/readiness routes, request validation,
 API-key enforcement, a mocked agent tool-call loop, bounded conversation pagination, canonical
-skill matching, staffing-state rules, and ambiguous client names.
+skill matching, staffing-state rules, ambiguous client names, role enforcement, administration, and
+audit history.
 
-## Authentication and API flow
+## Authentication, roles, and API flow
 
 1. The browser signs in through Better Auth at the API's `/api/auth/*` endpoint.
 2. Better Auth stores users and sessions in the shared Prisma database.
 3. The browser calls the NestJS API at `NEXT_PUBLIC_API_URL` with credentials included.
 4. Credentialed CORS permits the configured web origin.
 5. The API validates the Better Auth session and scopes conversations to the authenticated user.
-6. API-key authentication remains available for internal clients and automated tests.
+6. The session role controls access: viewers are read-only, managers can mutate staffing data, and
+   admins can also manage users and audit history.
+7. API-key authentication remains available for trusted internal clients and automated tests.
+
+The first account created in an empty local workspace becomes the bootstrap administrator. Later
+self-service accounts are viewers until an administrator promotes them. The role migration promotes
+only the oldest existing account to admin so an upgraded workspace retains bootstrap access. In
+production, set `ADMIN_EMAILS` to the comma-separated addresses allowed to self-register as
+administrators.
 
 ## LLM providers
 

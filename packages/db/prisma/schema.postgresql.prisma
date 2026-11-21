@@ -16,11 +16,13 @@ model User {
   email         String         @unique
   emailVerified Boolean        @default(false)
   image         String?
+  role          String         @default("viewer") // admin, manager, viewer
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   sessions      Session[]
   accounts      Account[]
   conversations Conversation[]
+  auditLogs     AuditLog[]
 
   @@map("user")
 }
@@ -224,4 +226,25 @@ model ChatUsage {
 
   @@unique([subject, day])
   @@index([day])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String?
+  actorType   String // user, api-key
+  actorName   String
+  actorKey    String?
+  action      String // create, update, delete
+  entityType  String // developer, client, contract, assignment, performance, user
+  entityId    String
+  beforeState String?
+  afterState  String?
+  requestId   String?
+  createdAt   DateTime @default(now())
+  actor       User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action])
 }

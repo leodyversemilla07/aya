@@ -1,5 +1,6 @@
 'use client';
 
+import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { clientsQuery } from '@/lib/queries';
 import type { ClientDetail, ClientSummary } from '@/lib/types';
@@ -23,6 +24,7 @@ import { ClientFormDialog } from './client-form';
 import { ConfirmDelete, EmptyRows, LoadingRows, ManagementPage, QueryError } from './ui';
 
 export function ClientsPage() {
+  const { canManage } = useWorkspaceAccess();
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -60,16 +62,18 @@ export function ClientsPage() {
       subtitle="Account management"
       description="Manage client accounts, industries, and points of contact."
       action={
-        <Button
-          type="button"
-          onClick={() => {
-            setEditing(null);
-            setDialogOpen(true);
-          }}
-        >
-          <Plus />
-          Add client
-        </Button>
+        canManage ? (
+          <Button
+            type="button"
+            onClick={() => {
+              setEditing(null);
+              setDialogOpen(true);
+            }}
+          >
+            <Plus />
+            Add client
+          </Button>
+        ) : undefined
       }
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -104,7 +108,7 @@ export function ClientsPage() {
                   <TableHead>Active developers</TableHead>
                   <TableHead>Contacts</TableHead>
                   <TableHead>Contracts</TableHead>
-                  <TableHead className="w-24 text-right">Actions</TableHead>
+                  {canManage ? <TableHead className="w-24 text-right">Actions</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -123,27 +127,29 @@ export function ClientsPage() {
                     <TableCell>{client.activeDeveloperCount}</TableCell>
                     <TableCell>{client.contactCount}</TableCell>
                     <TableCell>{client.contractCount}</TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Edit ${client.name}`}
-                          onClick={() => void openEdit(client)}
-                        >
-                          <Pencil />
-                        </Button>
-                        <ConfirmDelete
-                          title="Delete client?"
-                          description={`${client.name} and all related contacts, assignments, and contracts will be permanently deleted.`}
-                          pending={
-                            deleteMutation.isPending && deleteMutation.variables === client.id
-                          }
-                          onConfirm={() => deleteMutation.mutate(client.id)}
-                        />
-                      </div>
-                    </TableCell>
+                    {canManage ? (
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Edit ${client.name}`}
+                            onClick={() => void openEdit(client)}
+                          >
+                            <Pencil />
+                          </Button>
+                          <ConfirmDelete
+                            title="Delete client?"
+                            description={`${client.name} and all related contacts, assignments, and contracts will be permanently deleted.`}
+                            pending={
+                              deleteMutation.isPending && deleteMutation.variables === client.id
+                            }
+                            onConfirm={() => deleteMutation.mutate(client.id)}
+                          />
+                        </div>
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))}
               </TableBody>

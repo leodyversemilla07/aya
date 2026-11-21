@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type Prisma, containsIgnoreCase, prisma } from '@workspace/db';
 import type { z } from 'zod';
+import { type AuditActor, writeAudit } from '../audit/audit';
 import { isCurrentlyAssigned, syncBenchState } from '../domain/bench-state';
 import { isOccupiedAssignment, occupiedAssignmentWhere, startOfToday } from '../domain/staffing';
 import { contractInclude, toContract } from './contracts.mapper';
@@ -147,26 +148,40 @@ export class DevelopersService {
     };
   }
 
-  async create(input: DeveloperCreateInput): Promise<unknown> {
+  async create(
+    input: DeveloperCreateInput,
+    actor: AuditActor,
+    requestId?: string,
+  ): Promise<unknown> {
     try {
-      const created = await prisma.developer.create({
-        data: {
-          name: input.name,
-          email: input.email,
-          role: input.role,
-          seniority: input.seniority,
-          avatarUrl: emptyToNull(input.avatarUrl),
-          // A new developer has no assignment, so their bench period starts now
-          // unless an earlier start date is supplied.
-          benchSince: input.benchSince ?? startOfToday(),
-          skills: {
-            create: input.skills.map((skill) => ({
-              name: skill.name,
-              level: skill.level,
-              yearsExp: skill.yearsExp,
-            })),
+      const created = await prisma.$transaction(async (tx) => {
+        const developer = await tx.developer.create({
+          data: {
+            name: input.name,
+            email: input.email,
+            role: input.role,
+            seniority: input.seniority,
+            avatarUrl: emptyToNull(input.avatarUrl),
+            // A new developer has no assignment, so their bench period starts now
+            // unless an earlier start date is supplied.
+            benchSince: input.benchSince ?? startOfToday(),
+            skills: {
+              create: input.skills.map((skill) => ({
+                name: skill.name,
+                level: skill.level,
+                yearsExp: skill.yearsExp,
+              })),
+            },
           },
-        },
+        });
+        await writeAudit(tx, actor, {
+          action: 'create',
+          entityType: 'developer',
+          entityId: developer.id,
+          after: { ...developer, skills: input.skills },
+          requestId,
+        });
+        return developer;
       });
       return this.get(created.id);
     } catch (error) {
@@ -174,8 +189,17 @@ export class DevelopersService {
     }
   }
 
-  async update(id: string, input: DeveloperUpdateInput): Promise<unknown> {
-    await this.ensureExists(id);
+  async update(
+    id: string,
+    input: DeveloperUpdateInput,
+    actor: AuditActor,
+    requestId?: string,
+  ): Promise<unknown> {
+    const existing = await prisma.developer.findUnique({
+      where: { id },
+      include: { skills: true },
+    });
+    if (!existing) throw new NotFoundException(`Developer "${id}" was not found.`);
     const data: Prisma.DeveloperUpdateInput = {};
 
     if (input.name !== undefined) data.name = input.name;
@@ -212,6 +236,18 @@ export class DevelopersService {
         }
         // Keep the bench period aligned with the developer's staffing state.
         await syncBenchState(tx, id);
+        await writeAudit(tx, actor, {
+          action: 'update',
+          entityType: 'developer',
+          entityId: id,
+          before: existing,
+          after: {
+            ...existing,
+            ...input,
+            skills: input.skills ?? existing.skills,
+          },
+          requestId,
+        });
       });
     } catch (error) {
       rethrowPrismaError(error, 'Developer');
@@ -220,14 +256,22 @@ export class DevelopersService {
     return this.get(id);
   }
 
-  async remove(id: string) {
-    await this.ensureExists(id);
-    await prisma.developer.delete({ where: { id } });
+  async remove(id: string, actor: AuditActor, requestId?: string) {
+    const existing = await prisma.developer.findUnique({
+      where: { id },
+      include: { skills: true },
+    });
+    if (!existing) throw new NotFoundException(`Developer "${id}" was not found.`);
+    await prisma.$transaction(async (tx) => {
+      await tx.developer.delete({ where: { id } });
+      await writeAudit(tx, actor, {
+        action: 'delete',
+        entityType: 'developer',
+        entityId: id,
+        before: existing,
+        requestId,
+      });
+    });
     return { deleted: true, id };
-  }
-
-  private async ensureExists(id: string) {
-    const developer = await prisma.developer.findUnique({ where: { id }, select: { id: true } });
-    if (!developer) throw new NotFoundException(`Developer "${id}" was not found.`);
   }
 }

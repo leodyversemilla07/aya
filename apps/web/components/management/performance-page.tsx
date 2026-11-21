@@ -1,5 +1,6 @@
 'use client';
 
+import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { developersQuery, performanceQuery } from '@/lib/queries';
 import type { PerformanceRecord } from '@/lib/types';
@@ -27,6 +28,7 @@ import { PerformanceFormDialog } from './performance-form';
 import { ConfirmDelete, EmptyRows, LoadingRows, ManagementPage, QueryError } from './ui';
 
 export function PerformancePage() {
+  const { canManage } = useWorkspaceAccess();
   const [developerId, setDeveloperId] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<PerformanceRecord | null>(null);
@@ -54,16 +56,18 @@ export function PerformancePage() {
       subtitle="Team health"
       description="Record velocity, review turnaround, code quality, and client ratings."
       action={
-        <Button
-          type="button"
-          onClick={() => {
-            setEditing(null);
-            setDialogOpen(true);
-          }}
-        >
-          <Plus />
-          Add record
-        </Button>
+        canManage ? (
+          <Button
+            type="button"
+            onClick={() => {
+              setEditing(null);
+              setDialogOpen(true);
+            }}
+          >
+            <Plus />
+            Add record
+          </Button>
+        ) : undefined
       }
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -101,7 +105,7 @@ export function PerformancePage() {
                   <TableHead>Code quality</TableHead>
                   <TableHead>Rating</TableHead>
                   <TableHead>Notes</TableHead>
-                  <TableHead className="w-24 text-right">Actions</TableHead>
+                  {canManage ? <TableHead className="w-24 text-right">Actions</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -122,30 +126,32 @@ export function PerformancePage() {
                     <TableCell className="max-w-56 truncate text-xs text-muted-foreground">
                       {record.notes ?? '—'}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Edit ${record.period} record for ${record.developer.name}`}
-                          onClick={() => {
-                            setEditing(record);
-                            setDialogOpen(true);
-                          }}
-                        >
-                          <Pencil />
-                        </Button>
-                        <ConfirmDelete
-                          title="Delete performance record?"
-                          description={`The ${record.period} record for ${record.developer.name} will be permanently deleted.`}
-                          pending={
-                            deleteMutation.isPending && deleteMutation.variables === record.id
-                          }
-                          onConfirm={() => deleteMutation.mutate(record.id)}
-                        />
-                      </div>
-                    </TableCell>
+                    {canManage ? (
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Edit ${record.period} record for ${record.developer.name}`}
+                            onClick={() => {
+                              setEditing(record);
+                              setDialogOpen(true);
+                            }}
+                          >
+                            <Pencil />
+                          </Button>
+                          <ConfirmDelete
+                            title="Delete performance record?"
+                            description={`The ${record.period} record for ${record.developer.name} will be permanently deleted.`}
+                            pending={
+                              deleteMutation.isPending && deleteMutation.variables === record.id
+                            }
+                            onConfirm={() => deleteMutation.mutate(record.id)}
+                          />
+                        </div>
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))}
               </TableBody>

@@ -47,6 +47,10 @@ days?"_ — and return ranked, explainable answers.
   shared across the dashboard and chat pages. Older messages load on demand and chats can be deleted.
 - **Management console** — create, edit, and delete developers, clients, contracts, assignments,
   and performance records from dedicated pages, with search and status filters.
+- **Role-based access control** — admin, manager, and viewer roles protect management writes and
+  administrative endpoints while preserving read-only access to staffing data.
+- **Audit history** — management and role changes record the actor, action, entity, request ID, and
+  before/after state in a searchable administrator log.
 - **Secure by default** — Better Auth sessions for the browser, API-key compatibility for internal
   clients, credentialed CORS, Helmet, sanitized provider errors, and per-IP rate limiting.
 
@@ -73,9 +77,15 @@ flowchart LR
 
 Users sign in through Better Auth at `/sign-in` or `/sign-up`. Sessions are stored in the shared
 Prisma database and held in secure HttpOnly cookies. The browser calls the NestJS API directly
-using `NEXT_PUBLIC_API_URL` with credentials included; the API validates the session and CORS
-origin. The Next.js app has no `app/api` routes — authentication and application endpoints are both
-served by NestJS.
+using `NEXT_PUBLIC_API_URL` with credentials included; the API validates the session, workspace
+role, and CORS origin. The Next.js app has no `app/api` routes — authentication and application
+endpoints are both served by NestJS.
+
+The first account in a new local workspace becomes the bootstrap administrator. In production,
+only email addresses listed in `ADMIN_EMAILS` may self-register as administrators; all other
+self-service accounts start as viewers. An administrator can promote users to manager or viewer
+roles. API keys remain trusted internal-client credentials with the same broad access they had
+before role enforcement.
 
 API-key authentication is intended for trusted internal clients. Each configured API key has its
 own conversation and quota scope. Use Better Auth sessions when conversations must be isolated per
@@ -157,6 +167,7 @@ NODE_ENV="development"
 # Better Auth
 BETTER_AUTH_SECRET="replace-with-a-random-32-byte-secret"
 BETTER_AUTH_URL="http://localhost:3000"
+ADMIN_EMAILS="admin@example.com"
 
 # LLM: openai | openrouter | opencode-zen | anthropic | google | custom
 LLM_PROVIDER="opencode-zen"
@@ -183,6 +194,7 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 | `DATABASE_URL` | `file:./dev.db` | Relative SQLite paths resolve from `packages/db/prisma`. Use `postgresql://…` for PostgreSQL. |
 | `BETTER_AUTH_SECRET` | — | Required in production. Generate with `openssl rand -base64 32`. |
 | `BETTER_AUTH_URL` | `http://localhost:3000` | Public URL of the web origin. |
+| `ADMIN_EMAILS` | — | Comma-separated emails allowed to self-register as admins in production. |
 | `LLM_PROVIDER` | `opencode-zen` | `openai`, `openrouter`, `opencode-zen`, `anthropic`, `google`, or `custom`. |
 | `LLM_API_KEY` | — | Provider key. Provider-specific keys (`OPENAI_API_KEY`, etc.) also work. |
 | `LLM_BASE_URL` / `LLM_MODEL` | provider default | Override the selected provider's defaults. |
@@ -199,6 +211,7 @@ NEXT_PUBLIC_API_URL="http://localhost:3001"
 | `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | Only browser-exposed value. |
 | `SEED_FORCE` | `false` | Allow seeding when `NODE_ENV=production`. |
 | `SEED_RESET_CONVERSATIONS` | `false` | Also reset conversations when seeding. |
+| `SEED_RESET_USERS` | `false` | Test-only: delete auth users, sessions, and audit history while seeding. |
 
 > [!IMPORTANT]
 > `API_KEY` or `API_KEYS` is required in every environment; the API refuses to start without one. Never expose
@@ -232,6 +245,9 @@ raw keys are never stored. `API_KEYS` may be used instead of or alongside the le
 | `/assignments/:id` | `GET`/`PATCH`/`DELETE` | Session / API key | Read, update, or delete an assignment |
 | `/performance` | `GET`/`POST` | Session / API key | List or create performance records |
 | `/performance/:id` | `GET`/`PATCH`/`DELETE` | Session / API key | Read, update, or delete a performance record |
+| `/admin/users` | `GET` | Admin | List workspace users and roles |
+| `/admin/users/:id/role` | `PATCH` | Admin | Change a workspace user's role |
+| `/admin/audit-logs` | `GET` | Admin | Browse mutation and access audit history |
 
 ### Chat request
 
@@ -300,6 +316,10 @@ skill list, and updating a client replaces the submitted contact list. Omitting 
 from an update leaves the stored list untouched. Unique conflicts return `409`; invalid references and
 validation failures return `400`; missing records return `404`.
 
+Read operations are available to admins, managers, and viewers. Creating, updating, or deleting
+staffing records requires the admin or manager role; administrative user and audit-log endpoints
+require admin access. Trusted API-key clients bypass role checks.
+
 Text filters ignore case on both SQLite and PostgreSQL. SQLite's `LIKE` is already case-insensitive
 while PostgreSQL needs `ILIKE`, so the API builds the filter for the database in use and both
 databases return the same rows.
@@ -319,10 +339,16 @@ An expiry window (`expiringWithin`) only covers contracts that have already star
 that begins next month is never reported as expiring this month. The dashboard and the risk alerts
 use the same rule.
 
-### Authentication
+### Authentication and authorization
 
 - Browser requests use credentialed Better Auth session cookies, scoped to the signed-in user.
-- Internal clients may send `x-api-key: <key>` or `Authorization: Bearer <key>`.
+- **Admin** users have full access, including workspace role management and audit history.
+- **Manager** users can use Aya and create, update, or delete staffing records.
+- **Viewer** users have read-only access to dashboard and management data and can query Aya.
+- The first account in an empty local workspace bootstraps the admin role. In production, only
+  allowlisted `ADMIN_EMAILS` can self-register as admins; later accounts are viewers.
+- Internal clients may send `x-api-key: <key>` or `Authorization: Bearer <key>` and are treated as
+  trusted, fully authorized workspace clients.
 - `/`, `/health`, and `/ready` are public.
 - `/agent/chat` and `/agent/chat/stream` are rate limited to 20 requests/minute per API client IP
   by default, and limited by `CHAT_DAILY_QUOTA` per user/API key per UTC day.
@@ -365,16 +391,19 @@ Prisma schema and `DATABASE_URL` select the schema and migration directory autom
 generated `packages/db/prisma/schema.postgresql.prisma` is checked in and verified in CI.
 
 Core models: **Developer**, **Skill**, **Client**, **Contact**, **Assignment**, **Contract**,
-**Performance**, **Conversation**, **Message**, and **ChatUsage**, plus Better Auth **User**,
-**Session**, and **Account** tables. Indexes cover common filters such as developer
-name/seniority/bench, skill name, client industry, assignment and contract status/end dates,
-performance period, conversation/message ordering, and daily quota lookups.
+**Performance**, **Conversation**, **Message**, **ChatUsage**, and **AuditLog**, plus Better Auth
+**User**, **Session**, and **Account** tables. The user model carries the workspace role, and audit
+entries preserve the actor snapshot even if the acting user is later removed. Indexes cover common
+filters such as developer name/seniority/bench, skill name, client industry, assignment and contract
+status/end dates, performance period, conversation/message ordering, audit actor/entity lookups, and
+daily quota lookups.
 
 The seed script creates a deterministic dataset relative to today's date: 6 clients, 12 developers,
 50 skills, 11 assignments, 11 contracts, and 11 performance records — including a developer on the
 bench for 45 days and contracts expiring in 5, 10, and 25 days. Business data resets on every seed;
-conversations are preserved unless `SEED_RESET_CONVERSATIONS=true`. Production seeding requires
-`SEED_FORCE=true`.
+conversations are preserved unless `SEED_RESET_CONVERSATIONS=true`. The test-only
+`SEED_RESET_USERS=true` switch also deletes auth users, sessions, and audit history, so it should
+only be used with a disposable database. Production seeding requires `SEED_FORCE=true`.
 
 ```bash
 pnpm run db:seed      # seed demo data
@@ -429,8 +458,9 @@ The API e2e suite uses `file:./test-e2e.db` (`packages/db/prisma/test-e2e.db`) a
 migrations automatically, so no manual database setup is required. Tests do not call a real LLM —
 they cover public health/readiness routes, request validation, API-key enforcement, a mocked agent
 tool-call loop, bounded conversation pagination, canonical skill matching, staffing-state rules,
-ambiguous client names, and management CRUD (validation, unique conflicts, cascade deletes, skill
-canonicalization, and bench-state reconciliation).
+ambiguous client names, role enforcement, administration, audit history, and management CRUD
+(validation, unique conflicts, cascade deletes, skill canonicalization, and bench-state
+reconciliation).
 
 CI runs audit, migration drift checks, lint, typecheck, unit tests, SQLite and PostgreSQL-backed
 API e2e tests, Playwright browser tests, and the production build on Node.js 24 with pnpm 12.16.
@@ -454,6 +484,7 @@ application needs more than the environment-selected provider.
 ## Deployment
 
 - Set `NODE_ENV=production` and strong `API_KEY` / `BETTER_AUTH_SECRET` values.
+- Set `ADMIN_EMAILS` to the comma-separated addresses allowed to self-register as administrators.
 - Set `CORS_ORIGINS` to the deployed web origin(s) and enable credentialed CORS.
 - Use PostgreSQL in production and apply migrations with `pnpm run db:migrate:deploy` before starting
   the API. `DATABASE_URL` selects the SQLite or PostgreSQL schema and migrations automatically.

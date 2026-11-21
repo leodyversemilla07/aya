@@ -10,7 +10,13 @@ import {
   Patch,
   Post,
   Query,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
+import { actorFromRequest } from '../audit/audit';
+import type { AuthenticatedRequest } from '../auth/request';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import { parseOrThrow } from './management.http';
 import {
   performanceCreateSchema,
@@ -20,6 +26,8 @@ import {
 import { PerformanceService } from './performance.service';
 
 @Controller('performance')
+@Roles('admin', 'manager', 'viewer')
+@UseGuards(RolesGuard)
 export class PerformanceController {
   constructor(@Inject(PerformanceService) private readonly service: PerformanceService) {}
 
@@ -29,9 +37,14 @@ export class PerformanceController {
   }
 
   @Post()
+  @Roles('admin', 'manager')
   @HttpCode(HttpStatus.CREATED)
-  create(@Body() body: unknown) {
-    return this.service.create(parseOrThrow(performanceCreateSchema, body));
+  create(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.service.create(
+      parseOrThrow(performanceCreateSchema, body),
+      actorFromRequest(request),
+      request.requestId,
+    );
   }
 
   @Get(':id')
@@ -40,12 +53,19 @@ export class PerformanceController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() body: unknown) {
-    return this.service.update(id, parseOrThrow(performanceUpdateSchema, body));
+  @Roles('admin', 'manager')
+  update(@Param('id') id: string, @Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.service.update(
+      id,
+      parseOrThrow(performanceUpdateSchema, body),
+      actorFromRequest(request),
+      request.requestId,
+    );
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  @Roles('admin', 'manager')
+  remove(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    return this.service.remove(id, actorFromRequest(request), request.requestId);
   }
 }

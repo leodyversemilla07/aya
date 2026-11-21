@@ -47,6 +47,16 @@ async function seed() {
   const quarter = currentQuarter(today);
   console.log(`Seeding Aya demo data for ${today.toISOString().slice(0, 10)}...`);
 
+  if (process.env.SEED_RESET_USERS === 'true') {
+    // Browser tests need a deterministic first administrator. Audit events
+    // are reset with the users because their actor relation is nullable.
+    await prisma.auditLog.deleteMany();
+    await prisma.session.deleteMany();
+    await prisma.account.deleteMany();
+    await prisma.verification.deleteMany();
+    await prisma.user.deleteMany();
+  }
+
   // Business data is reset so the demo stays deterministic. Conversations are
   // intentionally preserved unless SEED_RESET_CONVERSATIONS=true is set.
   await prisma.performance.deleteMany();

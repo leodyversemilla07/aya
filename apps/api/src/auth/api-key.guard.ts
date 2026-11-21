@@ -50,8 +50,14 @@ export class ApiKeyGuard implements CanActivate {
       const { auth } = await import('@workspace/auth');
       const session = await auth.api.getSession({ headers });
       if (session) {
-        (request as Request & { auth?: typeof session }).auth = session;
-        (request as Request & { authSubject?: string }).authSubject = `user:${session.user.id}`;
+        const authenticatedRequest = request as Request & {
+          auth?: typeof session;
+          authSubject?: string;
+          authType?: 'session' | 'api-key';
+        };
+        authenticatedRequest.auth = session;
+        authenticatedRequest.authSubject = `user:${session.user.id}`;
+        authenticatedRequest.authType = 'session';
         return true;
       }
     }
@@ -77,7 +83,12 @@ export class ApiKeyGuard implements CanActivate {
     }
 
     const fingerprint = createHash('sha256').update(providedKey).digest('hex');
-    (request as Request & { authSubject?: string }).authSubject = `api-key:${fingerprint}`;
+    const authenticatedRequest = request as Request & {
+      authSubject?: string;
+      authType?: 'session' | 'api-key';
+    };
+    authenticatedRequest.authSubject = `api-key:${fingerprint}`;
+    authenticatedRequest.authType = 'api-key';
 
     return true;
   }

@@ -9,6 +9,7 @@ export default function globalSetup(): void {
     DATABASE_URL: 'file:./playwright.db',
     NODE_ENV: 'test',
     SEED_FORCE: 'true',
+    SEED_RESET_USERS: 'true',
   };
 
   console.log('Preparing the Playwright database...');

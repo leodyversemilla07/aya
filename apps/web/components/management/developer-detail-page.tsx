@@ -1,5 +1,6 @@
 'use client';
 
+import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { developerQuery } from '@/lib/queries';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -30,6 +31,7 @@ import {
 } from './ui';
 
 export function DeveloperDetailPage({ id }: { id: string }) {
+  const { canManage } = useWorkspaceAccess();
   const queryClient = useQueryClient();
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
@@ -79,19 +81,21 @@ export function DeveloperDetailPage({ id }: { id: string }) {
       subtitle="Developer profile"
       description={`${data.role} · ${data.seniority}`}
       action={
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={() => setEditOpen(true)}>
-            <Pencil />
-            Edit
-          </Button>
-          <ConfirmDelete
-            showLabel
-            title="Delete developer?"
-            description={`${data.name} and all related records will be permanently deleted.`}
-            pending={deleteMutation.isPending}
-            onConfirm={() => deleteMutation.mutate()}
-          />
-        </div>
+        canManage ? (
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => setEditOpen(true)}>
+              <Pencil />
+              Edit
+            </Button>
+            <ConfirmDelete
+              showLabel
+              title="Delete developer?"
+              description={`${data.name} and all related records will be permanently deleted.`}
+              pending={deleteMutation.isPending}
+              onConfirm={() => deleteMutation.mutate()}
+            />
+          </div>
+        ) : undefined
       }
     >
       <div>{back}</div>
@@ -253,7 +257,9 @@ export function DeveloperDetailPage({ id }: { id: string }) {
         </Card>
       </section>
 
-      <DeveloperFormDialog open={editOpen} onOpenChange={setEditOpen} developer={data} />
+      {canManage ? (
+        <DeveloperFormDialog open={editOpen} onOpenChange={setEditOpen} developer={data} />
+      ) : null}
     </ManagementPage>
   );
 }

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type Prisma, prisma } from '@workspace/db';
 import type { z } from 'zod';
+import { type AuditActor, writeAudit } from '../audit/audit';
 import { addDays, startOfToday } from '../domain/staffing';
 import { contractInclude, toContract } from './contracts.mapper';
 import { rethrowPrismaError } from './management.http';
@@ -56,19 +57,29 @@ export class ContractsService {
     return toContract(contract);
   }
 
-  async create(input: ContractCreateInput) {
+  async create(input: ContractCreateInput, actor: AuditActor, requestId?: string) {
     await this.ensureRelations(input.developerId, input.clientId);
     try {
-      const contract = await prisma.contract.create({
-        data: {
-          developerId: input.developerId,
-          clientId: input.clientId,
-          startDate: input.startDate,
-          endDate: input.endDate,
-          billingRate: input.billingRate,
-          status: input.status,
-        },
-        include: contractInclude,
+      const contract = await prisma.$transaction(async (tx) => {
+        const created = await tx.contract.create({
+          data: {
+            developerId: input.developerId,
+            clientId: input.clientId,
+            startDate: input.startDate,
+            endDate: input.endDate,
+            billingRate: input.billingRate,
+            status: input.status,
+          },
+          include: contractInclude,
+        });
+        await writeAudit(tx, actor, {
+          action: 'create',
+          entityType: 'contract',
+          entityId: created.id,
+          after: created,
+          requestId,
+        });
+        return created;
       });
       return toContract(contract);
     } catch (error) {
@@ -76,7 +87,7 @@ export class ContractsService {
     }
   }
 
-  async update(id: string, input: ContractUpdateInput) {
+  async update(id: string, input: ContractUpdateInput, actor: AuditActor, requestId?: string) {
     const existing = await prisma.contract.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Contract "${id}" was not found.`);
 
@@ -94,17 +105,28 @@ export class ContractsService {
     }
 
     try {
-      const contract = await prisma.contract.update({
-        where: { id },
-        data: {
-          ...(input.developerId !== undefined ? { developerId: input.developerId } : {}),
-          ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
-          ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
-          ...(input.endDate !== undefined ? { endDate: input.endDate } : {}),
-          ...(input.billingRate !== undefined ? { billingRate: input.billingRate } : {}),
-          ...(input.status !== undefined ? { status: input.status } : {}),
-        },
-        include: contractInclude,
+      const contract = await prisma.$transaction(async (tx) => {
+        const updated = await tx.contract.update({
+          where: { id },
+          data: {
+            ...(input.developerId !== undefined ? { developerId: input.developerId } : {}),
+            ...(input.clientId !== undefined ? { clientId: input.clientId } : {}),
+            ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
+            ...(input.endDate !== undefined ? { endDate: input.endDate } : {}),
+            ...(input.billingRate !== undefined ? { billingRate: input.billingRate } : {}),
+            ...(input.status !== undefined ? { status: input.status } : {}),
+          },
+          include: contractInclude,
+        });
+        await writeAudit(tx, actor, {
+          action: 'update',
+          entityType: 'contract',
+          entityId: id,
+          before: existing,
+          after: { ...existing, ...input },
+          requestId,
+        });
+        return updated;
       });
       return toContract(contract);
     } catch (error) {
@@ -112,10 +134,19 @@ export class ContractsService {
     }
   }
 
-  async remove(id: string) {
-    const contract = await prisma.contract.findUnique({ where: { id }, select: { id: true } });
+  async remove(id: string, actor: AuditActor, requestId?: string) {
+    const contract = await prisma.contract.findUnique({ where: { id } });
     if (!contract) throw new NotFoundException(`Contract "${id}" was not found.`);
-    await prisma.contract.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      await tx.contract.delete({ where: { id } });
+      await writeAudit(tx, actor, {
+        action: 'delete',
+        entityType: 'contract',
+        entityId: id,
+        before: contract,
+        requestId,
+      });
+    });
     return { deleted: true, id };
   }
 

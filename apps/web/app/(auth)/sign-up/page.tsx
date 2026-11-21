@@ -31,7 +31,9 @@ export default function SignUpPage() {
       <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-xl border p-6">
         <div>
           <h1 className="text-2xl font-semibold">Create your Aya account</h1>
-          <p className="text-sm text-muted-foreground">Staff managers can sign up here.</p>
+          <p className="text-sm text-muted-foreground">
+            New accounts start with read-only access until an administrator grants more.
+          </p>
         </div>
         <input
           required

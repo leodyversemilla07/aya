@@ -1,5 +1,6 @@
 'use client';
 
+import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { clientQuery } from '@/lib/queries';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -30,6 +31,7 @@ import {
 } from './ui';
 
 export function ClientDetailPage({ id }: { id: string }) {
+  const { canManage } = useWorkspaceAccess();
   const queryClient = useQueryClient();
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
@@ -79,19 +81,21 @@ export function ClientDetailPage({ id }: { id: string }) {
       subtitle="Client profile"
       description={data.industry}
       action={
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={() => setEditOpen(true)}>
-            <Pencil />
-            Edit
-          </Button>
-          <ConfirmDelete
-            showLabel
-            title="Delete client?"
-            description={`${data.name} and all related contacts, assignments, and contracts will be permanently deleted.`}
-            pending={deleteMutation.isPending}
-            onConfirm={() => deleteMutation.mutate()}
-          />
-        </div>
+        canManage ? (
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => setEditOpen(true)}>
+              <Pencil />
+              Edit
+            </Button>
+            <ConfirmDelete
+              showLabel
+              title="Delete client?"
+              description={`${data.name} and all related contacts, assignments, and contracts will be permanently deleted.`}
+              pending={deleteMutation.isPending}
+              onConfirm={() => deleteMutation.mutate()}
+            />
+          </div>
+        ) : undefined
       }
     >
       <div>{back}</div>
@@ -220,7 +224,9 @@ export function ClientDetailPage({ id }: { id: string }) {
         </Card>
       </section>
 
-      <ClientFormDialog open={editOpen} onOpenChange={setEditOpen} client={data} />
+      {canManage ? (
+        <ClientFormDialog open={editOpen} onOpenChange={setEditOpen} client={data} />
+      ) : null}
     </ManagementPage>
   );
 }

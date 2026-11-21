@@ -89,6 +89,16 @@ application endpoints use `/stats`, `/conversations`, and `/agent/chat`.
    - Contracts expiring within 30 days or expired within the previous 30 days
    - Performance concerns (code quality, merge time, client rating)
 
+7. **Role-based access control**
+   - Admin, manager, and viewer workspace roles
+   - Viewers can read staffing data; managers can mutate it; admins manage users and audit history
+   - The first local account bootstraps the admin role; production self-registration requires an `ADMIN_EMAILS` allowlist
+
+8. **Audit history**
+   - Transactional records for management and role mutations
+   - Actor identity, action, entity, request ID, and before/after state
+   - Administrator-only browsing and filtering
+
 ### Agent loop
 
 ```
@@ -127,6 +137,9 @@ User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Qu
 | `/assignments/:id` | GET/PATCH/DELETE | Session / API key | Read, update, or delete an assignment |
 | `/performance` | GET/POST | Session / API key | List or create performance records |
 | `/performance/:id` | GET/PATCH/DELETE | Session / API key | Read, update, or delete a performance record |
+| `/admin/users` | GET | Admin | List workspace users and roles |
+| `/admin/users/:id/role` | PATCH | Admin | Change a workspace user's role |
+| `/admin/audit-logs` | GET | Admin | Browse mutation and access audit history |
 
 ### Management rules
 
@@ -141,6 +154,10 @@ User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Qu
   use.
 - An expiry window only covers contracts that have already started, matching the dashboard and the
   risk alerts.
+- Admins, managers, and viewers can read management resources. Only admins and managers can create,
+  update, or delete staffing records. Admin-only endpoints manage roles and audit history.
+- Every successful management or role mutation writes an audit event in the same database
+  transaction. The workspace must retain at least one administrator.
 
 ### Request/response
 
@@ -162,7 +179,7 @@ supports cursor pagination with `limit` and `before` query parameters.
 15 seconds. Disconnects abort the upstream LLM request; OpenAI-compatible providers stream real
 tokens while Anthropic and Google emit the full reply as one `delta`.
 
-### Authentication
+### Authentication and authorization
 
 - Send `x-api-key: <key>` or `Authorization: Bearer <key>`.
 - `API_KEY` is required in every environment; startup fails otherwise.
@@ -172,6 +189,10 @@ tokens while Anthropic and Google emit the full reply as one `delta`.
   IP by default.
 - Browser requests use credentialed CORS and Better Auth sessions; API-key authentication remains
   available for internal clients.
+- Session roles are `admin`, `manager`, and `viewer`. The first account in an empty local workspace
+  is the bootstrap admin. In production, only allowlisted `ADMIN_EMAILS` can self-register as
+  admins; later self-service accounts are viewers until promoted.
+- API keys are trusted internal clients and retain broad access without a role assignment.
 
 ### Error handling
 
@@ -198,6 +219,8 @@ Provider errors are mapped to safe messages:
 | `/contracts` | Contract list with status/expiry filters and CRUD |
 | `/assignments` | Assignment list with status/active filters and CRUD |
 | `/performance` | Performance records with developer filter and CRUD |
+| `/admin/users` | Admin-only workspace user and role management |
+| `/admin/audit-logs` | Admin-only audit history browser |
 
 The sidebar shows navigation, capability shortcuts, and recent conversation history. Chat state is
 shared through `ChatProvider`, so starting a chat from the dashboard or sidebar stays consistent
@@ -253,10 +276,16 @@ the SQLite schema and verified in CI.
 - **Conversation** — title, messages, timestamps
 - **Message** — role, content, optional tool-call JSON and tool-call ID
 - **ChatUsage** — subject (`user:<id>` or `api-key`), UTC day, request count (unique per subject/day)
+- **AuditLog** — actor, action, entity, request ID, before/after state, and timestamp
+
+The Better Auth **User** model also carries a workspace role. The oldest existing account is promoted
+to admin by the role migration so a deployed workspace does not lose access; other existing accounts
+and newly created accounts default to viewer unless an email is allowlisted through
+`ADMIN_EMAILS`.
 
 Indexes cover common filters: developer name/seniority/bench, skill name, client industry,
-assignment and contract status/end dates, performance period, conversation/message ordering, and
-daily quota lookups.
+assignment and contract status/end dates, performance period, conversation/message ordering, audit
+actor/entity lookups, and daily quota lookups.
 
 ## Seed data
 
@@ -271,7 +300,9 @@ The seed script is date-relative so demos stay fresh:
 - Contracts expiring in 5, 10, and 25 days, plus an expired contract
 
 Business data resets on each seed. Conversations are preserved unless
-`SEED_RESET_CONVERSATIONS=true`. Production seeding requires `SEED_FORCE=true`.
+`SEED_RESET_CONVERSATIONS=true`. The test-only `SEED_RESET_USERS=true` switch also clears auth
+users, sessions, and audit history and must only target disposable databases. Production seeding
+requires `SEED_FORCE=true`.
 
 ## Development workflow
 
@@ -339,3 +370,6 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md).
 - [x] Durable per-user daily chat quotas
 - [x] Validated CRUD APIs and UI for roster, clients, contracts, assignments, and performance
 - [x] Management flows covered by API e2e and browser tests
+- [x] Admin, manager, and viewer roles enforced by the API
+- [x] Administrative role management with at least one-admin protection
+- [x] Transactional audit history for management and access changes

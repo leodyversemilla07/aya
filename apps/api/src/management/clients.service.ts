@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { type Prisma, containsIgnoreCase, prisma } from '@workspace/db';
 import type { z } from 'zod';
+import { type AuditActor, writeAudit } from '../audit/audit';
 import { syncBenchState } from '../domain/bench-state';
 import { occupiedAssignmentWhere, startOfToday } from '../domain/staffing';
 import { contractInclude, toContract } from './contracts.mapper';
@@ -96,22 +97,32 @@ export class ClientsService {
     };
   }
 
-  async create(input: ClientCreateInput): Promise<unknown> {
+  async create(input: ClientCreateInput, actor: AuditActor, requestId?: string): Promise<unknown> {
     try {
-      const created = await prisma.client.create({
-        data: {
-          name: input.name,
-          industry: input.industry,
-          logoUrl: emptyToNull(input.logoUrl),
-          contacts: {
-            create: input.contacts.map((contact) => ({
-              name: contact.name,
-              role: contact.role,
-              email: contact.email,
-              phone: emptyToNull(contact.phone),
-            })),
+      const created = await prisma.$transaction(async (tx) => {
+        const client = await tx.client.create({
+          data: {
+            name: input.name,
+            industry: input.industry,
+            logoUrl: emptyToNull(input.logoUrl),
+            contacts: {
+              create: input.contacts.map((contact) => ({
+                name: contact.name,
+                role: contact.role,
+                email: contact.email,
+                phone: emptyToNull(contact.phone),
+              })),
+            },
           },
-        },
+        });
+        await writeAudit(tx, actor, {
+          action: 'create',
+          entityType: 'client',
+          entityId: client.id,
+          after: { ...client, contacts: input.contacts },
+          requestId,
+        });
+        return client;
       });
       return this.get(created.id);
     } catch (error) {
@@ -119,8 +130,17 @@ export class ClientsService {
     }
   }
 
-  async update(id: string, input: ClientUpdateInput): Promise<unknown> {
-    await this.ensureExists(id);
+  async update(
+    id: string,
+    input: ClientUpdateInput,
+    actor: AuditActor,
+    requestId?: string,
+  ): Promise<unknown> {
+    const existing = await prisma.client.findUnique({
+      where: { id },
+      include: { contacts: true },
+    });
+    if (!existing) throw new NotFoundException(`Client "${id}" was not found.`);
     const data: Prisma.ClientUpdateInput = {};
 
     if (input.name !== undefined) data.name = input.name;
@@ -146,6 +166,18 @@ export class ClientsService {
             });
           }
         }
+        await writeAudit(tx, actor, {
+          action: 'update',
+          entityType: 'client',
+          entityId: id,
+          before: existing,
+          after: {
+            ...existing,
+            ...input,
+            contacts: input.contacts ?? existing.contacts,
+          },
+          requestId,
+        });
       });
     } catch (error) {
       rethrowPrismaError(error, 'Client');
@@ -154,8 +186,12 @@ export class ClientsService {
     return this.get(id);
   }
 
-  async remove(id: string) {
-    await this.ensureExists(id);
+  async remove(id: string, actor: AuditActor, requestId?: string) {
+    const existing = await prisma.client.findUnique({
+      where: { id },
+      include: { contacts: true },
+    });
+    if (!existing) throw new NotFoundException(`Client "${id}" was not found.`);
 
     // Deleting a client cascades to its assignments, so the affected
     // developers need their bench state reconciled.
@@ -173,13 +209,15 @@ export class ClientsService {
       for (const developerId of affectedDeveloperIds) {
         await syncBenchState(tx, developerId);
       }
+      await writeAudit(tx, actor, {
+        action: 'delete',
+        entityType: 'client',
+        entityId: id,
+        before: existing,
+        requestId,
+      });
     });
 
     return { deleted: true, id };
-  }
-
-  private async ensureExists(id: string) {
-    const client = await prisma.client.findUnique({ where: { id }, select: { id: true } });
-    if (!client) throw new NotFoundException(`Client "${id}" was not found.`);
   }
 }

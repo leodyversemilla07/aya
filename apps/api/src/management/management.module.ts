@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { RolesGuard } from '../auth/roles.guard';
 import { AssignmentsController } from './assignments.controller';
 import { AssignmentsService } from './assignments.service';
 import { ClientsController } from './clients.controller';
@@ -24,6 +25,7 @@ import { PerformanceService } from './performance.service';
     ContractsService,
     AssignmentsService,
     PerformanceService,
+    RolesGuard,
   ],
 })
 export class ManagementModule {}

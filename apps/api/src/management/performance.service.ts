@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type Prisma, prisma } from '@workspace/db';
 import type { z } from 'zod';
+import { type AuditActor, writeAudit } from '../audit/audit';
 import { rethrowPrismaError } from './management.http';
 import type {
   performanceCreateSchema,
@@ -68,20 +69,30 @@ export class PerformanceService {
     return toPerformance(performance);
   }
 
-  async create(input: PerformanceCreateInput) {
+  async create(input: PerformanceCreateInput, actor: AuditActor, requestId?: string) {
     await this.ensureDeveloper(input.developerId);
     try {
-      const performance = await prisma.performance.create({
-        data: {
-          developerId: input.developerId,
-          period: input.period,
-          velocity: input.velocity,
-          prMergeTime: input.prMergeTime,
-          codeQuality: input.codeQuality,
-          clientRating: input.clientRating ?? null,
-          notes: input.notes?.trim() ? input.notes.trim() : null,
-        },
-        include: performanceInclude,
+      const performance = await prisma.$transaction(async (tx) => {
+        const created = await tx.performance.create({
+          data: {
+            developerId: input.developerId,
+            period: input.period,
+            velocity: input.velocity,
+            prMergeTime: input.prMergeTime,
+            codeQuality: input.codeQuality,
+            clientRating: input.clientRating ?? null,
+            notes: input.notes?.trim() ? input.notes.trim() : null,
+          },
+          include: performanceInclude,
+        });
+        await writeAudit(tx, actor, {
+          action: 'create',
+          entityType: 'performance',
+          entityId: created.id,
+          after: created,
+          requestId,
+        });
+        return created;
       });
       return toPerformance(performance);
     } catch (error) {
@@ -89,27 +100,38 @@ export class PerformanceService {
     }
   }
 
-  async update(id: string, input: PerformanceUpdateInput) {
+  async update(id: string, input: PerformanceUpdateInput, actor: AuditActor, requestId?: string) {
     const existing = await prisma.performance.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Performance record "${id}" was not found.`);
 
     if (input.developerId) await this.ensureDeveloper(input.developerId);
 
     try {
-      const performance = await prisma.performance.update({
-        where: { id },
-        data: {
-          ...(input.developerId !== undefined ? { developerId: input.developerId } : {}),
-          ...(input.period !== undefined ? { period: input.period } : {}),
-          ...(input.velocity !== undefined ? { velocity: input.velocity } : {}),
-          ...(input.prMergeTime !== undefined ? { prMergeTime: input.prMergeTime } : {}),
-          ...(input.codeQuality !== undefined ? { codeQuality: input.codeQuality } : {}),
-          ...(input.clientRating !== undefined ? { clientRating: input.clientRating } : {}),
-          ...(input.notes !== undefined
-            ? { notes: input.notes?.trim() ? input.notes.trim() : null }
-            : {}),
-        },
-        include: performanceInclude,
+      const performance = await prisma.$transaction(async (tx) => {
+        const updated = await tx.performance.update({
+          where: { id },
+          data: {
+            ...(input.developerId !== undefined ? { developerId: input.developerId } : {}),
+            ...(input.period !== undefined ? { period: input.period } : {}),
+            ...(input.velocity !== undefined ? { velocity: input.velocity } : {}),
+            ...(input.prMergeTime !== undefined ? { prMergeTime: input.prMergeTime } : {}),
+            ...(input.codeQuality !== undefined ? { codeQuality: input.codeQuality } : {}),
+            ...(input.clientRating !== undefined ? { clientRating: input.clientRating } : {}),
+            ...(input.notes !== undefined
+              ? { notes: input.notes?.trim() ? input.notes.trim() : null }
+              : {}),
+          },
+          include: performanceInclude,
+        });
+        await writeAudit(tx, actor, {
+          action: 'update',
+          entityType: 'performance',
+          entityId: id,
+          before: existing,
+          after: { ...existing, ...input },
+          requestId,
+        });
+        return updated;
       });
       return toPerformance(performance);
     } catch (error) {
@@ -117,13 +139,21 @@ export class PerformanceService {
     }
   }
 
-  async remove(id: string) {
+  async remove(id: string, actor: AuditActor, requestId?: string) {
     const performance = await prisma.performance.findUnique({
       where: { id },
-      select: { id: true },
     });
     if (!performance) throw new NotFoundException(`Performance record "${id}" was not found.`);
-    await prisma.performance.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      await tx.performance.delete({ where: { id } });
+      await writeAudit(tx, actor, {
+        action: 'delete',
+        entityType: 'performance',
+        entityId: id,
+        before: performance,
+        requestId,
+      });
+    });
     return { deleted: true, id };
   }
 

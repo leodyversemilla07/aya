@@ -1,5 +1,6 @@
 'use client';
 
+import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { assignmentsQuery } from '@/lib/queries';
 import type { AssignmentRecord } from '@/lib/types';
@@ -37,6 +38,7 @@ import {
 const STATUSES = ['active', 'ending', 'transition', 'completed'] as const;
 
 export function AssignmentsPage() {
+  const { canManage } = useWorkspaceAccess();
   const [status, setStatus] = useState('all');
   const [active, setActive] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -66,16 +68,18 @@ export function AssignmentsPage() {
       subtitle="Delivery management"
       description="See who is on which project and manage assignment windows."
       action={
-        <Button
-          type="button"
-          onClick={() => {
-            setEditing(null);
-            setDialogOpen(true);
-          }}
-        >
-          <Plus />
-          Add assignment
-        </Button>
+        canManage ? (
+          <Button
+            type="button"
+            onClick={() => {
+              setEditing(null);
+              setDialogOpen(true);
+            }}
+          >
+            <Plus />
+            Add assignment
+          </Button>
+        ) : undefined
       }
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -121,7 +125,7 @@ export function AssignmentsPage() {
                   <TableHead>Client</TableHead>
                   <TableHead>Term</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-24 text-right">Actions</TableHead>
+                  {canManage ? <TableHead className="w-24 text-right">Actions</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -137,30 +141,32 @@ export function AssignmentsPage() {
                     <TableCell>
                       <StatusBadge status={assignment.status} />
                     </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Edit ${assignment.projectName}`}
-                          onClick={() => {
-                            setEditing(assignment);
-                            setDialogOpen(true);
-                          }}
-                        >
-                          <Pencil />
-                        </Button>
-                        <ConfirmDelete
-                          title="Delete assignment?"
-                          description={`${assignment.projectName} for ${assignment.developer.name} will be permanently deleted.`}
-                          pending={
-                            deleteMutation.isPending && deleteMutation.variables === assignment.id
-                          }
-                          onConfirm={() => deleteMutation.mutate(assignment.id)}
-                        />
-                      </div>
-                    </TableCell>
+                    {canManage ? (
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Edit ${assignment.projectName}`}
+                            onClick={() => {
+                              setEditing(assignment);
+                              setDialogOpen(true);
+                            }}
+                          >
+                            <Pencil />
+                          </Button>
+                          <ConfirmDelete
+                            title="Delete assignment?"
+                            description={`${assignment.projectName} for ${assignment.developer.name} will be permanently deleted.`}
+                            pending={
+                              deleteMutation.isPending && deleteMutation.variables === assignment.id
+                            }
+                            onConfirm={() => deleteMutation.mutate(assignment.id)}
+                          />
+                        </div>
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))}
               </TableBody>

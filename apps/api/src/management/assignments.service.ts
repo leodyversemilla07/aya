@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type Prisma, prisma } from '@workspace/db';
 import type { z } from 'zod';
+import { type AuditActor, writeAudit } from '../audit/audit';
 import { syncBenchState } from '../domain/bench-state';
 import { occupiedAssignmentWhere, startOfToday } from '../domain/staffing';
 import { emptyToNull, rethrowPrismaError } from './management.http';
@@ -79,7 +80,7 @@ export class AssignmentsService {
     return toAssignment(assignment);
   }
 
-  async create(input: AssignmentCreateInput) {
+  async create(input: AssignmentCreateInput, actor: AuditActor, requestId?: string) {
     await this.ensureRelations(input.developerId, input.clientId);
     try {
       const assignment = await prisma.$transaction(async (tx) => {
@@ -101,6 +102,13 @@ export class AssignmentsService {
         });
 
         await syncBenchState(tx, input.developerId);
+        await writeAudit(tx, actor, {
+          action: 'create',
+          entityType: 'assignment',
+          entityId: created.id,
+          after: created,
+          requestId,
+        });
 
         return created;
       });
@@ -110,7 +118,7 @@ export class AssignmentsService {
     }
   }
 
-  async update(id: string, input: AssignmentUpdateInput) {
+  async update(id: string, input: AssignmentUpdateInput, actor: AuditActor, requestId?: string) {
     const existing = await prisma.assignment.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException(`Assignment "${id}" was not found.`);
 
@@ -167,6 +175,14 @@ export class AssignmentsService {
         if (existing.developerId !== updated.developerId) {
           await syncBenchState(tx, existing.developerId);
         }
+        await writeAudit(tx, actor, {
+          action: 'update',
+          entityType: 'assignment',
+          entityId: id,
+          before: existing,
+          after: { ...existing, ...input },
+          requestId,
+        });
 
         return updated;
       });
@@ -176,15 +192,21 @@ export class AssignmentsService {
     }
   }
 
-  async remove(id: string) {
+  async remove(id: string, actor: AuditActor, requestId?: string) {
     const assignment = await prisma.assignment.findUnique({
       where: { id },
-      select: { id: true, developerId: true },
     });
     if (!assignment) throw new NotFoundException(`Assignment "${id}" was not found.`);
     await prisma.$transaction(async (tx) => {
       await tx.assignment.delete({ where: { id } });
       await syncBenchState(tx, assignment.developerId);
+      await writeAudit(tx, actor, {
+        action: 'delete',
+        entityType: 'assignment',
+        entityId: id,
+        before: assignment,
+        requestId,
+      });
     });
     return { deleted: true, id };
   }

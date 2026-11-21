@@ -6,6 +6,7 @@ const authEnvSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     BETTER_AUTH_SECRET: z.string().trim().optional(),
     BETTER_AUTH_URL: z.string().url().default('http://localhost:3000'),
+    ADMIN_EMAILS: z.string().optional(),
   })
   .superRefine((env, context) => {
     if (env.NODE_ENV === 'production' && !env.BETTER_AUTH_SECRET) {

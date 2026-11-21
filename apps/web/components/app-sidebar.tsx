@@ -1,5 +1,6 @@
 'use client';
 
+import { useWorkspaceAccess } from '@/lib/access';
 import { Button } from '@workspace/ui/components/button';
 import {
   Sidebar,
@@ -18,6 +19,8 @@ import {
   Home,
   MessageSquare,
   Plus,
+  ScrollText,
+  ShieldCheck,
   TrendingUp,
   UserPlus,
   Users,
@@ -43,6 +46,11 @@ const management = [
   { title: 'Performance', url: '/performance', icon: TrendingUp },
 ];
 
+const administration = [
+  { title: 'Users', url: '/admin/users', icon: ShieldCheck },
+  { title: 'Audit log', url: '/admin/audit-logs', icon: ScrollText },
+];
+
 const capabilities = [
   ['Match Talent', UserPlus, 'Find the best developers for a new project'],
   ['Utilization', BarChart3, 'What is our current utilization rate?'],
@@ -50,6 +58,7 @@ const capabilities = [
 ] as const;
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
+  const { isAdmin } = useWorkspaceAccess();
   const { isMobile, setOpenMobile } = useSidebar();
   const pathname = usePathname();
   const router = useRouter();
@@ -97,6 +106,15 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             isActive: pathname === item.url || pathname.startsWith(`${item.url}/`),
           }))}
         />
+        {isAdmin ? (
+          <NavMain
+            label="Administration"
+            items={administration.map((item) => ({
+              ...item,
+              isActive: pathname === item.url || pathname.startsWith(`${item.url}/`),
+            }))}
+          />
+        ) : null}
         <NavMain
           label="Capabilities"
           items={capabilities.map(([title, icon, query]) => ({

@@ -60,11 +60,32 @@ Never use `prisma migrate dev` against production. Deploy with `prisma migrate d
 | `API_KEY` | Long random value; required or the API refuses to start. |
 | `BETTER_AUTH_SECRET` | Random 32-byte secret shared by API and web. |
 | `BETTER_AUTH_URL` | Public web origin, e.g. `https://aya.example.com`. |
+| `ADMIN_EMAILS` | Comma-separated addresses allowed to self-register as administrators. |
 | `CORS_ORIGINS` | Exact public web origin(s), comma separated. Never `*` with credentials. |
 | `NEXT_PUBLIC_API_URL` | Public API origin baked into the web build. |
 | `LLM_API_KEY` | Provider key. |
 | `TRUST_PROXY` | `true` only behind a trusted reverse proxy. |
 | `CHAT_DAILY_QUOTA` | Requests per user/API key per UTC day; `0` disables. |
+
+## Workspace access and audit history
+
+The role migration promotes only the oldest account that existed before role enforcement to `admin`, so
+an upgraded workspace retains a bootstrap administrator without granting every account full access.
+Review the seeded administrator after deployment and promote additional accounts explicitly. Set
+`ADMIN_EMAILS` to the comma-separated addresses allowed to self-register as administrators. Every
+other self-service account starts as `viewer`.
+
+- **Admin** — full staffing access, user-role management, and audit history.
+- **Manager** — create, update, and delete staffing records.
+- **Viewer** — read-only dashboard and management access.
+
+The API prevents demoting the final administrator. API keys are trusted internal credentials and
+retain broad access independently of user roles.
+
+Successful staffing and role mutations write an `AuditLog` row in the same transaction as the
+change. Each row stores the actor, action, entity, request ID, timestamp, and before/after state.
+Apply an organization-appropriate retention policy to this table if it will be used for long-term
+compliance reporting.
 
 ## Chat quotas
 

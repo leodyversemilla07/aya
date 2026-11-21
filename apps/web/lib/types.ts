@@ -1,3 +1,5 @@
+import type { UserRole } from '@workspace/auth/roles';
+
 export type ChatRole = 'user' | 'assistant';
 
 export interface ChatMessage {
@@ -183,4 +185,36 @@ export interface ClientDetail {
   contracts: ContractRecord[];
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Administration ───────────────────────────────────
+
+export interface WorkspaceUserRecord {
+  id: string;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+  role: UserRole;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuditLogRecord {
+  id: string;
+  actor: {
+    id: string;
+    name: string;
+    email: string;
+    role: UserRole;
+  } | null;
+  actorType: 'user' | 'api-key';
+  actorName: string;
+  actorKey: string | null;
+  action: 'create' | 'update' | 'delete';
+  entityType: string;
+  entityId: string;
+  before: unknown;
+  after: unknown;
+  requestId: string | null;
+  createdAt: string;
 }

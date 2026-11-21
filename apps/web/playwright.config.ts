@@ -7,6 +7,7 @@ const sharedEnv: Record<string, string> = {
   DATABASE_URL: 'file:./playwright.db',
   BETTER_AUTH_SECRET: 'playwright-better-auth-secret-at-least-32-chars',
   BETTER_AUTH_URL: WEB_URL,
+  ADMIN_EMAILS: 'playwright-admin@example.com',
   NEXT_PUBLIC_API_URL: API_URL,
   API_KEY: 'playwright-api-key',
   CORS_ORIGINS: WEB_URL,
