@@ -52,7 +52,7 @@ CREATE TABLE "Notification" (
     "severity" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "message" TEXT NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "Notification_alertId_fkey" FOREIGN KEY ("alertId") REFERENCES "StaffingAlert" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "Notification_deliveryId_fkey" FOREIGN KEY ("deliveryId") REFERENCES "AlertDelivery" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
@@ -65,7 +65,7 @@ CREATE INDEX "Notification_severity_createdAt_idx" ON "Notification"("severity",
 CREATE TABLE "NotificationRead" (
     "notificationId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "readAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "readAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY ("notificationId", "userId"),
     CONSTRAINT "NotificationRead_notificationId_fkey" FOREIGN KEY ("notificationId") REFERENCES "Notification" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "NotificationRead_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE ON UPDATE CASCADE
