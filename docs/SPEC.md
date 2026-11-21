@@ -99,6 +99,11 @@ application endpoints use `/stats`, `/conversations`, and `/agent/chat`.
    - Actor identity, action, entity, request ID, and before/after state
    - Administrator-only browsing and filtering
 
+9. **Agent evaluation harness**
+   - Deterministic replay scenarios for CI and optional live-provider comparisons
+   - Assertions for tool sequence, argument validity, response content, and data grounding
+   - Reports for pass rates, tool calls, token usage, and latency
+
 ### Agent loop
 
 ```
@@ -113,6 +118,24 @@ User Query → LLM Reasoning → Tool Calling → Zod Validation → Database Qu
 - Tool calls and results are persisted for auditability; only user/assistant messages are replayed
   to the model.
 - The system prompt includes today's date so expiry reasoning is deterministic.
+
+### Agent evaluation harness
+
+The evaluation harness executes the production agent service and real database tools against a
+disposable seeded database. Replay mode substitutes checked-in model responses, making tool
+selection, arguments, grounding, response content, and error handling deterministic and
+provider-free. Live mode uses the configured provider with the same scenario assertions.
+
+- Twelve scenarios cover every agent tool, multi-turn context, empty results, ambiguous clients,
+  and missing records.
+- Tool arguments are checked against the production Zod schemas.
+- Named facts must appear in both tool output and the answer to pass grounding checks.
+- A checked-in replay baseline requires 100% scenario, tool-selection, argument-validity,
+  expected-argument, grounding, and response pass rates.
+- JSON reports include per-turn checks, tool output, token usage, and latency; generated reports are
+  ignored by Git.
+- Replay mode guards orchestration and grounding regressions; prompt, tool-description, and model
+  regressions require a live-provider run.
 
 ## API endpoints
 
@@ -323,6 +346,7 @@ pnpm run typecheck
 pnpm run test
 pnpm run test:e2e
 pnpm run test:e2e:web
+pnpm run agent:eval
 pnpm run db:drift
 pnpm run db:postgres:check
 pnpm run build
@@ -373,3 +397,4 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md).
 - [x] Admin, manager, and viewer roles enforced by the API
 - [x] Administrative role management with at least one-admin protection
 - [x] Transactional audit history for management and access changes
+- [x] Deterministic agent evaluation benchmark with tool, argument, grounding, and response checks

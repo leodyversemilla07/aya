@@ -154,6 +154,8 @@ packages/
 | `pnpm run test` | API unit tests (Jest) and web unit/component tests (Vitest) |
 | `pnpm run test:e2e` | API end-to-end and tool integration tests |
 | `pnpm run test:e2e:web` | Playwright browser tests against the production build |
+| `pnpm run agent:eval` | Run deterministic agent evaluation scenarios |
+| `pnpm run agent:eval:live` | Run agent evaluations against the configured LLM provider |
 | `pnpm run db:generate` | Generate the Prisma client |
 | `pnpm run db:push` | Push the Prisma schema to the local database |
 | `pnpm run db:migrate` | Create a development migration |
@@ -170,6 +172,7 @@ packages/
 pnpm run test          # API unit tests (Jest) + web unit/component tests (Vitest)
 pnpm run test:e2e      # API e2e tests (Jest + Supertest)
 pnpm run test:e2e:web  # browser e2e tests (Playwright)
+pnpm run agent:eval    # deterministic agent behavior benchmark
 ```
 
 The web app uses Vitest with React Testing Library and jsdom. Component tests live in
@@ -193,6 +196,13 @@ The tests do not call a real LLM. They cover public health/readiness routes, req
 API-key enforcement, a mocked agent tool-call loop, bounded conversation pagination, canonical
 skill matching, staffing-state rules, ambiguous client names, role enforcement, administration, and
 audit history.
+
+`pnpm run agent:eval` creates and seeds the disposable
+`packages/db/prisma/agent-eval.db` database, then runs 12 replay scenarios through the real agent
+loop and database tools. It requires no provider key or network access and fails when the checked-in
+baseline regresses. `pnpm run agent:eval:live` runs the same assertions against the provider in the
+root `.env`; live calls can consume tokens and are not run by CI. See
+[Agent evaluations](./AGENT_EVALUATIONS.md) for scenario coverage, reports, and iteration commands.
 
 ## Authentication, roles, and API flow
 

@@ -1,7 +1,13 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { prisma } from '@workspace/db';
 import { getServerEnv } from '@workspace/env';
-import { type LlmMessage, LlmService, type LlmTools } from '../llm/llm.service';
+import {
+  type LlmMessage,
+  type LlmResponse,
+  LlmService,
+  type LlmToolCall,
+  type LlmTools,
+} from '../llm/llm.service';
 import { executeTool, tools } from './tools';
 
 const MAX_ITERATIONS = 4;
@@ -37,10 +43,22 @@ interface PendingMessage {
   toolCallId?: string | null;
 }
 
+export interface AgentToolCallEvent {
+  index: number;
+  call: LlmToolCall;
+}
+
+export interface AgentToolResultEvent extends AgentToolCallEvent {
+  result: unknown;
+}
+
 export interface AgentRunHooks {
   onConversation?: (conversation: { id: string; title: string }) => void;
   onStatus?: (status: string) => void;
   onDelta?: (delta: string) => void;
+  onToolCall?: (event: AgentToolCallEvent) => void;
+  onToolResult?: (event: AgentToolResultEvent) => void;
+  onCompletion?: (response: LlmResponse) => void;
 }
 
 const TOOL_STATUS_LABELS: Record<string, string> = {
@@ -77,8 +95,9 @@ export class AgentService {
     clientSignal?: AbortSignal,
     userId?: string,
     accessSubject?: string,
+    hooks?: AgentRunHooks,
   ) {
-    return this.run(message, conversationId, clientSignal, userId, accessSubject);
+    return this.run(message, conversationId, clientSignal, userId, accessSubject, hooks);
   }
 
   async chatStream(
@@ -206,15 +225,21 @@ export class AgentService {
       ? AbortSignal.any([clientSignal, deadlineSignal])
       : deadlineSignal;
 
-    const complete = (completionMessages: LlmMessage[], completionTools?: LlmTools) =>
-      hooks?.onDelta
-        ? this.llmService.chatStream(
+    const complete = async (
+      completionMessages: LlmMessage[],
+      completionTools?: LlmTools,
+    ): Promise<LlmResponse> => {
+      const completion = hooks?.onDelta
+        ? await this.llmService.chatStream(
             completionMessages,
             completionTools,
             hooks.onDelta,
             requestSignal,
           )
-        : this.llmService.chat(completionMessages, completionTools, requestSignal);
+        : await this.llmService.chat(completionMessages, completionTools, requestSignal);
+      hooks?.onCompletion?.(completion);
+      return completion;
+    };
 
     const pendingMessages: PendingMessage[] = [];
     let completionCount = 1;
@@ -224,11 +249,16 @@ export class AgentService {
       hooks?.onStatus?.(describeToolActivity(response.toolCalls.map((call) => call.name)));
 
       const toolResults = await Promise.all(
-        response.toolCalls.map(async (toolCall) => ({
-          role: 'tool' as const,
-          content: JSON.stringify(await executeTool(toolCall.name, toolCall.args)),
-          toolCallId: toolCall.id,
-        })),
+        response.toolCalls.map(async (toolCall, index) => {
+          hooks?.onToolCall?.({ index, call: toolCall });
+          const result = await executeTool(toolCall.name, toolCall.args);
+          hooks?.onToolResult?.({ index, call: toolCall, result });
+          return {
+            role: 'tool' as const,
+            content: JSON.stringify(result),
+            toolCallId: toolCall.id,
+          };
+        }),
       );
 
       pendingMessages.push({

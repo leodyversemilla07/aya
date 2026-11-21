@@ -61,6 +61,9 @@ jobs:
       - name: Unit tests
         run: pnpm run test
 
+      - name: Agent evaluation replay
+        run: pnpm run agent:eval
+
       - name: Build
         run: pnpm run build
 
@@ -143,6 +146,9 @@ jobs:
 
       - name: Seed PostgreSQL test data
         run: pnpm run db:seed
+
+      - name: Run agent evaluation replay against PostgreSQL
+        run: pnpm --filter @aya/api run agent:eval -- --mode=replay
 
       - name: Run API end-to-end tests against PostgreSQL
         run: pnpm --filter @aya/api run test:e2e

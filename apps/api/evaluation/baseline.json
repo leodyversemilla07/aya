@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "mode": "replay",
+  "thresholds": {
+    "scenarioPassRate": 1,
+    "toolSelectionAccuracy": 1,
+    "argumentValidity": 1,
+    "argumentExpectationRate": 1,
+    "groundingRate": 1,
+    "responseAccuracy": 1
+  }
+}

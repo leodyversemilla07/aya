@@ -33,9 +33,16 @@ export interface LlmMessage {
   toolCallId?: string;
 }
 
+export interface LlmUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+}
+
 export interface LlmResponse {
   content: string;
   toolCalls: LlmToolCall[];
+  usage?: LlmUsage;
 }
 
 export interface LlmToolDefinition {
@@ -140,6 +147,7 @@ function toLlmResponse(response: AiResponse): LlmResponse {
       name: call.name,
       args: call.arguments,
     })),
+    ...(response.usage ? { usage: response.usage } : {}),
   };
 }
 

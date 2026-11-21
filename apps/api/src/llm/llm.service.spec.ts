@@ -142,6 +142,34 @@ describe('toJsonSchema', () => {
   });
 });
 
+describe('LlmService.chat', () => {
+  it('exposes provider token usage to callers', async () => {
+    await withProviderServer(
+      (request, response) => {
+        request.resume();
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(
+          JSON.stringify({
+            choices: [{ message: { content: 'Done' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 },
+          }),
+        );
+      },
+      async (baseUrl) => {
+        await withLlmEnv(baseUrl, '0', async () => {
+          const result = await new LlmService().chat([{ role: 'user', content: 'hello' }]);
+
+          expect(result).toEqual({
+            content: 'Done',
+            toolCalls: [],
+            usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17 },
+          });
+        });
+      },
+    );
+  });
+});
+
 describe('LlmService.chatStream', () => {
   it('streams text deltas and returns the accumulated response', async () => {
     const deltas: string[] = [];

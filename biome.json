@@ -61,6 +61,7 @@
       "apps/web/playwright-report",
       "apps/web/blob-report",
       "apps/web/playwright/.cache",
+      "apps/api/evaluation/reports",
       "*.generated.*",
       "*.css",
       "packages/db/prisma/dev.db",

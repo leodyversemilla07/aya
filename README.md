@@ -51,6 +51,8 @@ days?"_ — and return ranked, explainable answers.
   administrative endpoints while preserving read-only access to staffing data.
 - **Audit history** — management and role changes record the actor, action, entity, request ID, and
   before/after state in a searchable administrator log.
+- **Agent evaluation harness** — deterministic replay benchmarks verify tool routing, arguments,
+  grounding, error handling, token usage, and latency without calling a provider in CI.
 - **Secure by default** — Better Auth sessions for the browser, API-key compatibility for internal
   clients, credentialed CORS, Helmet, sanitized provider errors, and per-IP rate limiting.
 
@@ -384,6 +386,21 @@ user/assistant messages (up to 40,000 characters) are replayed to the model. Too
 are stored for auditability. The system prompt includes today's date so expiry reasoning is
 deterministic.
 
+### Agent evaluations
+
+The agent evaluation harness runs 12 realistic scenarios against the real agent loop, tool router,
+schemas, and seeded database. Replay mode is deterministic and provider-free, so it can block
+orchestration and data-grounding regressions in CI. Live mode runs the same assertions against the
+configured provider to detect prompt, tool-description, and model regressions.
+
+```bash
+pnpm run agent:eval       # deterministic replay benchmark
+pnpm run agent:eval:live  # same scenarios against the configured provider
+```
+
+See [Agent evaluations](docs/AGENT_EVALUATIONS.md) for scenario coverage, metrics, reports, and
+instructions for adding new cases.
+
 ## Database
 
 Prisma 6 targets SQLite for local development and tests, and PostgreSQL for production. The
@@ -423,6 +440,8 @@ pnpm run db:studio    # browse data in Prisma Studio
 | `pnpm run test` | API unit tests (Jest) and web unit/component tests (Vitest) |
 | `pnpm run test:e2e` | API end-to-end and tool integration tests |
 | `pnpm run test:e2e:web` | Playwright browser tests against the production build |
+| `pnpm run agent:eval` | Run deterministic agent evaluation scenarios |
+| `pnpm run agent:eval:live` | Run agent evaluations against the configured LLM provider |
 | `pnpm run audit` | Audit production dependencies |
 | `pnpm run audit:all` | Audit all dependencies, including tooling |
 | `pnpm run db:generate` | Generate the Prisma client |
@@ -441,6 +460,7 @@ pnpm run db:studio    # browse data in Prisma Studio
 pnpm run test          # API unit tests (Jest) + web unit/component tests (Vitest)
 pnpm run test:e2e      # API e2e tests (Jest + Supertest)
 pnpm run test:e2e:web  # browser e2e tests (Playwright)
+pnpm run agent:eval    # deterministic agent behavior benchmark
 ```
 
 The web app uses **Vitest** with React Testing Library and jsdom for unit and component tests.
@@ -462,8 +482,15 @@ ambiguous client names, role enforcement, administration, audit history, and man
 (validation, unique conflicts, cascade deletes, skill canonicalization, and bench-state
 reconciliation).
 
-CI runs audit, migration drift checks, lint, typecheck, unit tests, SQLite and PostgreSQL-backed
-API e2e tests, Playwright browser tests, and the production build on Node.js 24 with pnpm 12.16.
+The agent evaluation benchmark uses its own disposable
+`packages/db/prisma/agent-eval.db` database. Replay mode verifies tool routing, argument validity,
+grounding, response content, empty results, and safe error handling without provider credentials or
+network access. Live mode uses the configured provider and reports the same metrics plus token usage
+and latency.
+
+CI runs audit, migration drift checks, lint, typecheck, unit tests, the deterministic agent
+evaluation benchmark, SQLite and PostgreSQL-backed API e2e tests, Playwright browser tests, and the
+production build on Node.js 24 with pnpm 12.16.
 The PostgreSQL job also verifies migrations and schema drift against a clean database.
 
 ## LLM providers
@@ -502,5 +529,6 @@ SSE proxy settings, and the migration workflow.
 ## Documentation
 
 - [Development setup](docs/DEVELOPMENT_SETUP.md) — local environment, testing, and troubleshooting
+- [Agent evaluations](docs/AGENT_EVALUATIONS.md) — benchmark modes, metrics, scenarios, and reports
 - [Project specification](docs/SPEC.md) — features, architecture, data model, and success criteria
 - [Brand guide](docs/BRAND.md) — logo variants, color, typography, and usage rules

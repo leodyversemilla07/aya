@@ -109,17 +109,23 @@ function usageFrom(
         total_tokens?: number;
         input_tokens?: number;
         output_tokens?: number;
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+        totalTokenCount?: number;
       }
     | undefined,
 ): AiUsage | undefined {
   if (!value) return undefined;
+  const inputTokens = value.prompt_tokens ?? value.input_tokens ?? value.promptTokenCount;
+  const outputTokens = value.completion_tokens ?? value.output_tokens ?? value.candidatesTokenCount;
   return {
-    inputTokens: value.prompt_tokens ?? value.input_tokens,
-    outputTokens: value.completion_tokens ?? value.output_tokens,
+    inputTokens,
+    outputTokens,
     totalTokens:
       value.total_tokens ??
-      (value.input_tokens !== undefined && value.output_tokens !== undefined
-        ? value.input_tokens + value.output_tokens
+      value.totalTokenCount ??
+      (inputTokens !== undefined && outputTokens !== undefined
+        ? inputTokens + outputTokens
         : undefined),
   };
 }
@@ -757,6 +763,20 @@ export class AiClient {
           name: part.functionCall?.name as string,
           arguments: parseArguments(part.functionCall?.args),
         })),
+      usage: usageFrom(
+        data.usage as
+          | {
+              prompt_tokens?: number;
+              completion_tokens?: number;
+              total_tokens?: number;
+              input_tokens?: number;
+              output_tokens?: number;
+              promptTokenCount?: number;
+              candidatesTokenCount?: number;
+              totalTokenCount?: number;
+            }
+          | undefined,
+      ),
       provider: this.providerConfig.provider,
       model: this.providerConfig.model,
     };
