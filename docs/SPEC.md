@@ -326,7 +326,9 @@ The sidebar shows navigation, capability shortcuts, and recent conversation hist
 shared through `ChatProvider`, so starting a chat from the dashboard or sidebar stays consistent
 across pages. Assistant replies stream token by token with tool-status feedback, older messages load
 with cursor pagination, and conversations can be deleted after a confirmation. The active
-conversation is remembered in `localStorage`.
+conversation is remembered in `localStorage`. Management list filters (search, status, seniority,
+bench, and similar) live in the URL query string, so filtered views survive reloads and can be
+shared as links.
 
 ## Environment variables
 

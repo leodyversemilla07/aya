@@ -4,6 +4,7 @@ import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { clientsQuery } from '@/lib/queries';
 import type { ClientDetail, ClientSummary } from '@/lib/types';
+import { useDebouncedUrlFilterState } from '@/lib/url-state';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
@@ -19,21 +20,20 @@ import {
 } from '@workspace/ui/components/table';
 import { Pencil, Plus, Search } from 'lucide-react';
 import Link from 'next/link';
-import { useDeferredValue, useState } from 'react';
+import { useState } from 'react';
 import { ClientFormDialog } from './client-form';
 import { ConfirmDelete, EmptyRows, LoadingRows, ManagementPage, QueryError } from './ui';
 
 export function ClientsPage() {
   const { canManage } = useWorkspaceAccess();
-  const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search);
+  const [search, setSearch] = useDebouncedUrlFilterState('search', '');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ClientDetail | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
   const { data, isPending, error } = useQuery(
-    clientsQuery({ search: deferredSearch.trim() || undefined, limit: 100 }),
+    clientsQuery({ search: search.trim() || undefined, limit: 100 }),
   );
 
   const deleteMutation = useMutation({

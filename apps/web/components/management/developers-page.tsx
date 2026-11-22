@@ -4,6 +4,7 @@ import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { developersQuery } from '@/lib/queries';
 import type { DeveloperSummary } from '@/lib/types';
+import { useDebouncedUrlFilterState, useUrlFilterState } from '@/lib/url-state';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@workspace/ui/components/badge';
 import { Button } from '@workspace/ui/components/button';
@@ -26,7 +27,7 @@ import {
 } from '@workspace/ui/components/table';
 import { Pencil, Plus, Search } from 'lucide-react';
 import Link from 'next/link';
-import { useDeferredValue, useState } from 'react';
+import { useState } from 'react';
 import { DeveloperFormDialog } from './developer-form';
 import { ConfirmDelete, EmptyRows, LoadingRows, ManagementPage, QueryError } from './ui';
 
@@ -34,17 +35,16 @@ const SENIORITIES = ['junior', 'mid', 'senior', 'lead'] as const;
 
 export function DevelopersPage() {
   const { canManage } = useWorkspaceAccess();
-  const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search);
-  const [seniority, setSeniority] = useState('all');
-  const [bench, setBench] = useState('all');
+  const [search, setSearch] = useDebouncedUrlFilterState('search', '');
+  const [seniority, setSeniority] = useUrlFilterState('seniority', 'all');
+  const [bench, setBench] = useUrlFilterState('bench', 'all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<DeveloperSummary | null>(null);
 
   const queryClient = useQueryClient();
   const { data, isPending, error } = useQuery(
     developersQuery({
-      search: deferredSearch.trim() || undefined,
+      search: search.trim() || undefined,
       seniority: seniority === 'all' ? undefined : seniority,
       onBench: bench === 'all' ? undefined : bench === 'true',
       limit: 100,

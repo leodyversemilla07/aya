@@ -4,6 +4,7 @@ import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { assignmentsQuery } from '@/lib/queries';
 import type { AssignmentRecord } from '@/lib/types';
+import { useUrlFilterState } from '@/lib/url-state';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@workspace/ui/components/button';
 import { Card } from '@workspace/ui/components/card';
@@ -39,8 +40,8 @@ const STATUSES = ['active', 'ending', 'transition', 'completed'] as const;
 
 export function AssignmentsPage() {
   const { canManage } = useWorkspaceAccess();
-  const [status, setStatus] = useState('all');
-  const [active, setActive] = useState('all');
+  const [status, setStatus] = useUrlFilterState('status', 'all');
+  const [active, setActive] = useUrlFilterState('active', 'all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AssignmentRecord | null>(null);
 

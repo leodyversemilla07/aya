@@ -88,4 +88,31 @@ test.describe('management console', () => {
     await expect(page).toHaveURL(/\/performance$/);
     await expect(page.getByRole('heading', { name: 'Performance' })).toBeVisible();
   });
+
+  test('keeps list filters in the URL across reloads', async ({ page }) => {
+    await signUp(page);
+
+    await page.getByRole('link', { name: 'Developers', exact: true }).click();
+    await expect(page).toHaveURL(/\/developers$/);
+
+    await page.getByRole('combobox').first().click();
+    await page.getByRole('option', { name: 'senior', exact: true }).click();
+    await expect(page).toHaveURL(/\/developers\?seniority=senior$/);
+
+    await page.getByRole('combobox').nth(1).click();
+    await page.getByRole('option', { name: 'On bench' }).click();
+    await expect(page).toHaveURL(/seniority=senior&bench=true$/);
+
+    // The seeded workspace has no senior bench developers, so the empty state shows.
+    await expect(page.getByText(/No developers/i)).toBeVisible();
+
+    await page.reload();
+    await expect(page).toHaveURL(/seniority=senior&bench=true$/);
+    await expect(page.getByText(/No developers/i)).toBeVisible();
+
+    // Resetting the filter removes the parameter from the URL.
+    await page.getByRole('combobox').nth(1).click();
+    await page.getByRole('option', { name: 'All availability' }).click();
+    await expect(page).toHaveURL(/\/developers\?seniority=senior$/);
+  });
 });

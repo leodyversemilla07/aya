@@ -4,6 +4,7 @@ import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { contractsQuery } from '@/lib/queries';
 import type { ContractRecord } from '@/lib/types';
+import { useUrlFilterState } from '@/lib/url-state';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@workspace/ui/components/button';
 import { Card } from '@workspace/ui/components/card';
@@ -38,8 +39,8 @@ import {
 
 export function ContractsPage() {
   const { canManage } = useWorkspaceAccess();
-  const [status, setStatus] = useState('all');
-  const [expiring, setExpiring] = useState('all');
+  const [status, setStatus] = useUrlFilterState('status', 'all');
+  const [expiring, setExpiring] = useUrlFilterState('expiring', 'all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ContractRecord | null>(null);
 

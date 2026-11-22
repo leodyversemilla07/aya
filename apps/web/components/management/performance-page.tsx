@@ -4,6 +4,7 @@ import { useWorkspaceAccess } from '@/lib/access';
 import { apiRequest } from '@/lib/api';
 import { developersQuery, performanceQuery } from '@/lib/queries';
 import type { PerformanceRecord } from '@/lib/types';
+import { useUrlFilterState } from '@/lib/url-state';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@workspace/ui/components/button';
 import { Card } from '@workspace/ui/components/card';
@@ -29,7 +30,7 @@ import { ConfirmDelete, EmptyRows, LoadingRows, ManagementPage, QueryError } fro
 
 export function PerformancePage() {
   const { canManage } = useWorkspaceAccess();
-  const [developerId, setDeveloperId] = useState('all');
+  const [developerId, setDeveloperId] = useUrlFilterState('developer', 'all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<PerformanceRecord | null>(null);
 
