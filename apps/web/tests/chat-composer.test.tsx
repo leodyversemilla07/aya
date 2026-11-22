@@ -2,6 +2,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ChatComposer } from '../components/chat/chat-composer';
+import { ChatMessages } from '../components/chat/chat-messages';
 import { ChatProvider } from '../components/chat/chat-provider';
 import { jsonResponse, renderWithQueryClient, sseEvent, sseResponse } from './test-utils';
 
@@ -52,5 +53,54 @@ describe('ChatComposer', () => {
       );
     });
     expect(input).toHaveValue('');
+  });
+
+  it('stops a streaming turn and keeps the partial reply as a message', async () => {
+    const user = userEvent.setup();
+    const encoder = new TextEncoder();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url.endsWith('/conversations')) return jsonResponse([]);
+      if (url.endsWith('/agent/chat/stream')) {
+        const signal = init?.signal;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              encoder.encode(sseEvent('delta', { content: 'Partial reply from Aya' })),
+            );
+            // The stream stays open until the provider aborts the request.
+            signal?.addEventListener('abort', () => {
+              controller.error(new DOMException('The request was aborted.', 'AbortError'));
+            });
+          },
+        });
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQueryClient(
+      <ChatProvider>
+        <ChatMessages />
+        <ChatComposer />
+      </ChatProvider>,
+    );
+
+    const input = screen.getByLabelText('Message Aya');
+    await user.type(input, 'Who is on the bench?');
+    await user.keyboard('[Enter]');
+
+    const stopButton = await screen.findByRole('button', { name: 'Stop generating' });
+    await user.click(stopButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Send message' })).toBeVisible();
+    });
+    // The partial reply is committed as a real message instead of vanishing.
+    expect(screen.getByText('Partial reply from Aya')).toBeVisible();
   });
 });

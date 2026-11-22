@@ -1,59 +1,90 @@
 'use client';
 
-import { Button } from '@workspace/ui/components/button';
-import { Input } from '@workspace/ui/components/input';
-import { Send } from 'lucide-react';
-import { type FormEvent, useRef, useState } from 'react';
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
+} from '@workspace/ui/components/input-group';
+import { ArrowUp, Square } from 'lucide-react';
+import { type FormEvent, type KeyboardEvent, useRef, useState } from 'react';
 import { useChat } from './chat-provider';
 
 export function ChatComposer({ placeholder = 'Ask about your team...' }: { placeholder?: string }) {
-  const { sendMessage, loading } = useChat();
+  const { sendMessage, stop, loading } = useChat();
   const [input, setInput] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function submit() {
     const message = input.trim();
     if (!message || loading) return;
 
     setInput('');
     void sendMessage(message);
-    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    submit();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      submit();
+    }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto flex w-full max-w-3xl items-end gap-2">
-      <div className="flex-1">
-        <label htmlFor="chat-input" className="sr-only">
-          Message Aya
-        </label>
-        <Input
-          ref={inputRef}
+    <form ref={formRef} onSubmit={handleSubmit} className="mx-auto w-full max-w-3xl">
+      <label htmlFor="chat-input" className="sr-only">
+        Message Aya
+      </label>
+      <InputGroup className="h-auto flex-col items-stretch bg-background py-0.5">
+        <InputGroupTextarea
           id="chat-input"
           value={input}
           onChange={(event) => setInput(event.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={loading}
           maxLength={10_000}
+          rows={1}
           autoComplete="off"
           enterKeyHint="send"
           aria-describedby="chat-input-hint"
-          className="h-11 bg-background"
+          className="min-h-11 max-h-48 overflow-y-auto px-3 py-2.5"
         />
-        <p id="chat-input-hint" className="sr-only">
-          Press Enter to send your message. Messages are limited to 10,000 characters.
-        </p>
-      </div>
-      <Button
-        type="submit"
-        size="icon"
-        aria-label="Send message"
-        title="Send message"
-        disabled={loading || !input.trim()}
-        className="h-11 w-11 shrink-0"
-      >
-        <Send className="h-4 w-4" />
-      </Button>
+        <InputGroupAddon align="block-end" className="items-center px-2 pb-2">
+          <span id="chat-input-hint" className="text-[11px] text-muted-foreground">
+            Press Enter to send · Shift+Enter for a new line
+          </span>
+          {loading ? (
+            <InputGroupButton
+              type="button"
+              size="icon-sm"
+              variant="destructive"
+              aria-label="Stop generating"
+              title="Stop generating"
+              className="ml-auto rounded-full"
+              onClick={() => stop()}
+            >
+              <Square className="h-3 w-3" />
+            </InputGroupButton>
+          ) : (
+            <InputGroupButton
+              type="submit"
+              size="icon-sm"
+              className="ml-auto rounded-full"
+              disabled={!input.trim()}
+              aria-label="Send message"
+              title="Send message"
+            >
+              <ArrowUp />
+            </InputGroupButton>
+          )}
+        </InputGroupAddon>
+      </InputGroup>
     </form>
   );
 }

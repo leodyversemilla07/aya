@@ -54,6 +54,7 @@ interface ChatContextValue {
   conversations: ConversationSummary[];
   conversationsLoading: boolean;
   sendMessage: (text: string) => Promise<void>;
+  stop: () => void;
   newChat: () => void;
   loadConversation: (id: string, options?: { silent?: boolean }) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
@@ -100,11 +101,37 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const toolStepsRef = useRef<ChatToolStep[]>([]);
   const [usage, setUsage] = useState<ChatUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const streamingContentRef = useRef('');
 
   const resetToolSteps = useCallback(() => {
     toolStepsRef.current = [];
     setToolSteps([]);
   }, []);
+
+  useEffect(() => {
+    streamingContentRef.current = streamingContent;
+  }, [streamingContent]);
+
+  // Aborts the in-flight turn and keeps whatever the model already streamed,
+  // so a stopped reply shows up as a (partial) message instead of vanishing.
+  const stop = useCallback(() => {
+    if (!abortRef.current) return;
+    abortRef.current.abort();
+    abortRef.current = null;
+    sendingRef.current = false;
+    setLoading(false);
+    setStatus(null);
+    const partial = streamingContentRef.current;
+    const turnSteps = toolStepsRef.current;
+    if (partial.trim()) {
+      setMessages((previous) => [
+        ...previous,
+        { role: 'assistant', content: partial, steps: turnSteps },
+      ]);
+    }
+    setStreamingContent('');
+    resetToolSteps();
+  }, [resetToolSteps]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
@@ -460,6 +487,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       conversations: conversationsQueryState.data ?? [],
       conversationsLoading: conversationsQueryState.isPending,
       sendMessage,
+      stop,
       newChat,
       loadConversation,
       loadOlderMessages,
@@ -482,6 +510,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       conversationsQueryState.data,
       conversationsQueryState.isPending,
       sendMessage,
+      stop,
       newChat,
       loadConversation,
       loadOlderMessages,
