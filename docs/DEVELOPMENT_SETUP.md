@@ -60,6 +60,8 @@ pnpm run dev
 - Web: http://localhost:3000
 - API: http://localhost:3001
 - API health check: http://localhost:3001/health
+- API reference (Swagger UI): http://localhost:3001/docs
+- OpenAPI 3.1 document: http://localhost:3001/openapi.json
 
 ### 5. Production build
 

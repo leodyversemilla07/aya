@@ -14,6 +14,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AllExceptionsFilter } from './observability/all-exceptions.filter';
 import { MetricsModule } from './observability/metrics.module';
 import { requestIdMiddleware } from './observability/request-logger';
+import { OpenApiModule } from './openapi/openapi.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { requestIdMiddleware } from './observability/request-logger';
     AdminModule,
     MetricsModule,
     ForecastingModule,
+    OpenApiModule,
   ],
   controllers: [AppController, AuthController],
   providers: [

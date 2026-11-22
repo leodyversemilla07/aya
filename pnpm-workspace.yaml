@@ -36,3 +36,5 @@ allowBuilds:
   "esbuild": true
   "prisma": true
   "unrs-resolver": true
+  # swagger-ui-dist's telemetry beacon must not run.
+  "@scarf/scarf": false

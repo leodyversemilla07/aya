@@ -25,7 +25,7 @@ import {
   quotaSubjectFor,
 } from './chat-quota.service';
 
-const chatRequestSchema = z.object({
+export const chatRequestSchema = z.object({
   message: z
     .string()
     .trim()

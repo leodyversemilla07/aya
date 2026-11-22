@@ -195,6 +195,11 @@ the bench pool.
 
 ## API endpoints
 
+The full contract is generated as OpenAPI 3.1 from the controllers' Zod schemas
+(`apps/api/src/openapi/openapi.document.ts`), served publicly at `/openapi.json` with an interactive
+Swagger UI at `/docs`. The docs page loads only same-origin assets, so the strict helmet CSP stays
+intact.
+
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/` | GET | Public | Service greeting |

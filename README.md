@@ -257,6 +257,10 @@ raw keys are never stored. `API_KEYS` may be used instead of or alongside the le
 
 ## API
 
+The machine-readable contract is served as OpenAPI 3.1 at `/openapi.json`, and an interactive
+reference (Swagger UI) is available at `/docs`. Both are public; the operations they describe still
+require authentication as listed below.
+
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/` | `GET` | Public | Service greeting |
